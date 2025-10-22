@@ -34,10 +34,30 @@ def tokenize_template(template, ctx: TemplateContext) -> Iterator[Token]:
     Yields:
         Token instances
     """
-    from .lexer import BasicLexer
+    from .lexer import BasicLexer, PatternPlaceholder, PatternTree
+    from .common import LexerConf
+
+    # Filter out PYOBJ and TREE__ terminals for static text lexing
+    # These terminals are only used for interpolated values
+    filtered_terminals = [
+        t for t in ctx.lexer_conf.terminals
+        if not isinstance(t.pattern, (PatternPlaceholder, PatternTree))
+    ]
+
+    # Create a lexer config for static text (without template-specific terminals)
+    lexer_conf = LexerConf(
+        terminals=filtered_terminals,
+        re_module=ctx.lexer_conf.re_module,
+        ignore=ctx.lexer_conf.ignore,
+        postlex=None,  # No postlex in template mode
+        callbacks={},
+        g_regex_flags=ctx.lexer_conf.g_regex_flags,
+        skip_validation=True,  # Allow zero-width if needed
+        use_bytes=ctx.lexer_conf.use_bytes
+    )
 
     # Create lexer for static text
-    lexer = BasicLexer(ctx.lexer_conf)
+    lexer = BasicLexer(lexer_conf)
 
     has_source = ctx.source_info is not None
 
@@ -48,14 +68,17 @@ def tokenize_template(template, ctx: TemplateContext) -> Iterator[Token]:
     for i, static_str in enumerate(strings):
         # Lex static string if non-empty
         if static_str:
+            from .lexer import LexerState
+
             if has_source:
                 start, end = ctx.source_info.segment_spans[i]
                 text_slice = TextSlice(ctx.source_info.text, start, end)
             else:
                 text_slice = TextSlice(static_str, 0, len(static_str))
 
-            # Yield all tokens from lexing
-            for token in lexer.lex(text_slice, None):
+            # Create lexer state and lex
+            lexer_state = LexerState(text_slice)
+            for token in lexer.lex(lexer_state, None):
                 yield token
 
         # Process interpolation if not at end

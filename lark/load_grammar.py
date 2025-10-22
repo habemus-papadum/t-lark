@@ -907,14 +907,19 @@ def augment_grammar_for_template_mode(compiled_rules: List[Rule], terminals: Lis
 
     # Step 3: Create TREE__LABEL terminals and mapping
     tree_terminal_map = {}
+    existing_terminal_names = {t.name for t in terminals}
+
     for label in all_labels:
         term_name = f"TREE__{label.upper()}"
         tree_terminal_map[label] = term_name
 
-        # Create the terminal definition
-        pattern = PatternTree(label)
-        term_def = TerminalDef(term_name, pattern, TOKEN_DEFAULT_PRIORITY)
-        terminals.append(term_def)
+        # Only create if it doesn't already exist
+        if term_name not in existing_terminal_names:
+            # Create the terminal definition
+            pattern = PatternTree(label)
+            term_def = TerminalDef(term_name, pattern, TOKEN_DEFAULT_PRIORITY)
+            terminals.append(term_def)
+            existing_terminal_names.add(term_name)
 
     # Step 4: Add injection rules
     new_rules = []

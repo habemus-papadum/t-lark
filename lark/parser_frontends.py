@@ -269,41 +269,75 @@ class TemplateEarleyFrontend:
         from .load_grammar import augment_grammar_for_template_mode
         from .exceptions import UnexpectedInput
         from .utils import logger
+        from .lexer import TerminalDef
+        from copy import copy
 
-        self.lexer_conf = lexer_conf
-        self.parser_conf = parser_conf
         self.options = options
-
-        # Get compiled rules (need to be compiled first)
-        # The rules are in parser_conf.parser_type after grammar compilation
-        # We need to augment before creating the parser
 
         # Get type mappings
         self.pyobj_types = getattr(options, 'pyobj_types', {}) if options else {}
 
+        # Augment grammar for template mode
+        # Make copies to avoid modifying the original
+        terminals = list(lexer_conf.terminals)
+        rules = list(parser_conf.rules)
+
+        # Augment with tree injection rules
+        self.tree_terminal_map = augment_grammar_for_template_mode(rules, terminals)
+
+        # Create callbacks for the new TREE__ rules
+        # These rules should just return their single child (the spliced tree)
+        callbacks = dict(parser_conf.callbacks)
+        for rule in rules:
+            if rule not in parser_conf.callbacks:
+                # For TREE__ rules with expand1=True, return the single child
+                if (len(rule.expansion) == 1 and
+                    rule.expansion[0].is_term and
+                    rule.expansion[0].name.startswith('TREE__')):
+                    callbacks[rule] = lambda children: children[0]
+
+        # Create new configurations with augmented grammar
+        self.lexer_conf = LexerConf(
+            terminals=terminals,
+            re_module=lexer_conf.re_module,
+            ignore=lexer_conf.ignore,
+            postlex=lexer_conf.postlex,
+            callbacks=lexer_conf.callbacks,
+            g_regex_flags=lexer_conf.g_regex_flags,
+            skip_validation=lexer_conf.skip_validation,
+            use_bytes=lexer_conf.use_bytes,
+            strict=lexer_conf.strict
+        )
+        self.lexer_conf.lexer_type = lexer_conf.lexer_type
+
+        self.parser_conf = ParserConf(rules, callbacks, parser_conf.start)
+        self.parser_conf.parser_type = parser_conf.parser_type
+
         # Build label map for quick lookup
         self.labels_per_nonterminal = self._compute_labels()
-
-        # We'll augment the rules during parser creation
-        # For now, store the mapping for later
-        self.tree_terminal_map = {}
 
         # Create custom term matcher
         term_matcher = self._create_term_matcher()
 
         # Create Earley parser with custom term matcher
-        resolve_ambiguity = options.ambiguity == 'resolve' if options else True
-        debug = options.debug if options else False
-        tree_class = options.tree_class if options else Tree
-        if options and options.ambiguity == 'forest':
-            tree_class = None
+        # Match the settings from create_earley_parser
+        if options:
+            resolve_ambiguity = options.ambiguity == 'resolve'
+            debug = options.debug
+            tree_class = options.tree_class or Tree if options.ambiguity != 'forest' else None
+            ordered_sets = options.ordered_sets
+        else:
+            resolve_ambiguity = True
+            debug = False
+            tree_class = Tree
+            ordered_sets = True
 
         self.parser = earley.Parser(
-            lexer_conf, parser_conf, term_matcher,
+            self.lexer_conf, self.parser_conf, term_matcher,
             resolve_ambiguity=resolve_ambiguity,
             debug=debug,
             tree_class=tree_class,
-            ordered_sets=getattr(options, 'ordered_sets', True) if options else True
+            ordered_sets=ordered_sets
         )
 
     def _compute_labels(self):
@@ -380,23 +414,48 @@ class TemplateEarleyFrontend:
 
     def parse(self, input_data, start=None, on_error=None):
         """Parse a Template or plain string."""
-        try:
-            from string.templatelib import Template
-        except ImportError:
-            Template = None
+        # Check if input is a Template object (duck typing)
+        # Template has .strings and .interpolations attributes
+        is_template = (hasattr(input_data, 'strings') and
+                      hasattr(input_data, 'interpolations'))
 
         chosen_start = self._verify_start(start)
         kw = {} if on_error is None else {'on_error': on_error}
 
         # Route to appropriate tokenization
-        if Template and isinstance(input_data, Template):
+        if is_template:
             # For templates, create a custom lexer wrapper
             lexer_wrapper = self._create_template_lexer(input_data)
             tree = self.parser.parse(lexer_wrapper, chosen_start, **kw)
         else:
             # Plain string: use basic lexer directly
+            from .common import LexerConf
+            from .lexer import PatternPlaceholder, PatternTree
+
             text_slice = TextSlice.cast_from(input_data) if not isinstance(input_data, TextSlice) else input_data
-            lexer = BasicLexer(self.lexer_conf)
+
+            # Filter out PYOBJ and TREE__ terminals for plain string lexing
+            # These terminals are only matched in template mode via custom term matcher
+            filtered_terminals = [
+                t for t in self.lexer_conf.terminals
+                if not isinstance(t.pattern, (PatternPlaceholder, PatternTree))
+            ]
+
+            # Create lexer conf for plain strings (without template-specific terminals)
+            lexer_conf_for_strings = LexerConf(
+                terminals=filtered_terminals,
+                re_module=self.lexer_conf.re_module,
+                ignore=self.lexer_conf.ignore,
+                postlex=self.lexer_conf.postlex,
+                callbacks=self.lexer_conf.callbacks,
+                g_regex_flags=self.lexer_conf.g_regex_flags,
+                skip_validation=True,  # Skip validation for safety
+                use_bytes=self.lexer_conf.use_bytes,
+                strict=self.lexer_conf.strict
+            )
+            lexer_conf_for_strings.lexer_type = self.lexer_conf.lexer_type
+
+            lexer = BasicLexer(lexer_conf_for_strings)
 
             # Create lexer state for Earley
             from .lexer import LexerState
@@ -427,8 +486,7 @@ class TemplateEarleyFrontend:
 
         ctx = TemplateContext(
             lexer_conf=self.lexer_conf,
-            tree_terminal_map={label: f"TREE__{label.upper()}"
-                              for label in self._all_labels()},
+            tree_terminal_map=self.tree_terminal_map,
             source_info=getattr(template, 'source_info', None)
         )
 

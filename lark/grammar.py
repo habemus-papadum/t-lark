@@ -134,3 +134,68 @@ class Rule(Serialize):
 
 
 ###}
+
+
+def augment_grammar_for_template_mode(lexer_conf, parser_conf, grammar):
+    """Augment grammar and lexer configuration for template parsing."""
+
+    from .lexer import TerminalDef, PatternPlaceholder, PatternTree
+    import re
+
+    terminals = list(lexer_conf.terminals)
+    terminals_by_name = dict(getattr(lexer_conf, 'terminals_by_name', {}))
+
+    def add_terminal(name: str, pattern) -> TerminalDef:
+        term = terminals_by_name.get(name)
+        if term is not None:
+            return term
+        term = TerminalDef(name, pattern)
+        terminals.append(term)
+        terminals_by_name[name] = term
+        return term
+
+    tree_terminal_map = {}
+
+    if getattr(grammar, 'uses_pyobj_placeholders', False):
+        add_terminal('PYOBJ', PatternPlaceholder())
+        for term_name, type_name in getattr(grammar, 'pyobj_type_names', {}).items():
+            add_terminal(term_name, PatternPlaceholder(type_name))
+
+    labels_per_nonterminal = {}
+    for rule in parser_conf.rules:
+        origin = rule.origin
+        labels_per_nonterminal.setdefault(origin, set()).add(rule.alias or rule.origin.name)
+
+    def sanitize_label(label: str) -> str:
+        return re.sub(r'[^0-9A-Za-z_]', '_', label).upper()
+
+    for label_set in labels_per_nonterminal.values():
+        for label in label_set:
+            term_name = f"TREE__{sanitize_label(label)}"
+            add_terminal(term_name, PatternTree(label))
+            tree_terminal_map[label] = term_name
+
+    lexer_conf.terminals = terminals
+    lexer_conf.terminals_by_name = terminals_by_name
+
+    existing_rules = {(rule.origin, tuple(rule.expansion)) for rule in parser_conf.rules}
+
+    new_rules = []
+    for origin, labels in labels_per_nonterminal.items():
+        current_orders = [rule.order for rule in parser_conf.rules if rule.origin == origin]
+        next_order = max(current_orders, default=-1) + 1
+        for label in labels:
+            term_name = tree_terminal_map[label]
+            terminal_symbol = Terminal(term_name)
+            expansion = (terminal_symbol,)
+            key = (origin, expansion)
+            if key in existing_rules:
+                continue
+            new_rule = Rule(origin, list(expansion), next_order, None, RuleOptions(expand1=True))
+            next_order += 1
+            existing_rules.add(key)
+            new_rules.append(new_rule)
+
+    parser_conf.rules.extend(new_rules)
+
+    return tree_terminal_map

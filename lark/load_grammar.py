@@ -3,16 +3,17 @@
 
 import hashlib
 import os.path
+import re
 import sys
 from collections import namedtuple
 from copy import copy, deepcopy
 import pkgutil
 from ast import literal_eval
 from contextlib import suppress
-from typing import List, Tuple, Union, Callable, Dict, Optional, Sequence, Generator
+from typing import Any, List, Tuple, Union, Callable, Dict, Optional, Sequence, Generator
 
 from .utils import bfs, logger, classify_bool, is_id_continue, is_id_start, bfs_all_unique, small_factors, OrderedSet, Serialize
-from .lexer import Token, TerminalDef, PatternStr, PatternRE, Pattern
+from .lexer import Token, TerminalDef, PatternStr, PatternRE, Pattern, PatternPlaceholder
 
 from .parse_tree_builder import ParseTreeBuilder
 from .parser_frontends import ParsingFrontend
@@ -686,6 +687,8 @@ class Grammar(Serialize):
         self.term_defs = term_defs
         self.rule_defs = rule_defs
         self.ignore = ignore
+        self.uses_pyobj_placeholders = False
+        self.pyobj_type_names: Dict[str, str] = {}
 
     __serialize_fields__ = 'term_defs', 'rule_defs', 'ignore'
 
@@ -1099,6 +1102,8 @@ class GrammarBuilder:
 
         self._definitions: Dict[str, Definition] = {}
         self._ignore_names: List[str] = []
+        self.uses_pyobj_placeholders = False
+        self._pyobj_type_names: Dict[str, str] = {}
 
     def _grammar_error(self, is_term, msg, *names):
         args = {}
@@ -1178,6 +1183,114 @@ class GrammarBuilder:
             self._ignore_names.append(name)
             self._definitions[name] = Definition(True, t, options=TOKEN_DEFAULT_PRIORITY)
 
+    def _ensure_pyobj_declared(self) -> None:
+        if 'PYOBJ' not in self._definitions:
+            self._define('PYOBJ', True, None)
+
+    def _register_untyped_pyobj(self) -> None:
+        if not self.uses_pyobj_placeholders:
+            raise GrammarError("PYOBJ requires: %import template (PYOBJ)")
+        self._ensure_pyobj_declared()
+
+    def _sanitize_pyobj_name(self, name: str) -> str:
+        sanitized = re.sub(r'[^0-9A-Za-z_]', '_', name)
+        if not sanitized:
+            raise GrammarError(f"Invalid PYOBJ type name: {name!r}")
+        return sanitized.upper()
+
+    def _register_pyobj_type(self, type_name: str) -> str:
+        if not self.uses_pyobj_placeholders:
+            raise GrammarError("PYOBJ requires: %import template (PYOBJ)")
+
+        self._ensure_pyobj_declared()
+
+        sanitized = self._sanitize_pyobj_name(type_name)
+        term_name = f"PYOBJ__{sanitized}"
+        if term_name not in self._definitions:
+            self._define(term_name, True, None)
+        existing = self._pyobj_type_names.get(term_name)
+        if existing is None:
+            self._pyobj_type_names[term_name] = type_name
+        return term_name
+
+    def _process_template_placeholders(self, tree: Tree) -> Tree:
+        def transform(node: Tree) -> Tree:
+            if not isinstance(node, Tree):
+                return node
+
+            if node.data == 'expansion':
+                new_children = []
+                i = 0
+                while i < len(node.children):
+                    child = node.children[i]
+                    if (
+                        isinstance(child, Tree)
+                        and child.data == 'value'
+                        and len(child.children) == 1
+                        and isinstance(child.children[0], Terminal)
+                        and child.children[0].name == 'PYOBJ'
+                    ):
+                        type_name = None
+                        if i + 1 < len(node.children):
+                            maybe = node.children[i + 1]
+                            type_name = self._extract_pyobj_type(maybe)
+                        if type_name:
+                            term_name = self._register_pyobj_type(type_name)
+                            new_children.append(Tree('value', [Terminal(term_name)]))
+                            i += 2
+                            continue
+                        else:
+                            self._register_untyped_pyobj()
+                    if isinstance(child, Tree):
+                        child = transform(child)
+                    new_children.append(child)
+                    i += 1
+                node.children = new_children
+                return node
+
+            node.children = [transform(c) if isinstance(c, Tree) else c for c in node.children]
+            if node.data == 'value' and node.children:
+                sym = node.children[0]
+                if isinstance(sym, Terminal) and sym.name == 'PYOBJ':
+                    self._register_untyped_pyobj()
+            return node
+
+        return transform(tree)
+
+    def _extract_pyobj_type(self, maybe: Any) -> Optional[str]:
+        if not isinstance(maybe, Tree) or maybe.data != 'maybe':
+            return None
+        if len(maybe.children) != 1:
+            return None
+        expansions = maybe.children[0]
+        if not isinstance(expansions, Tree) or expansions.data != 'expansions' or len(expansions.children) != 1:
+            return None
+        expansion = expansions.children[0]
+        if not isinstance(expansion, Tree) or expansion.data != 'expansion' or len(expansion.children) != 1:
+            return None
+        value = expansion.children[0]
+        if not isinstance(value, Tree) or value.data != 'value' or len(value.children) != 1:
+            return None
+        symbol = value.children[0]
+        if isinstance(symbol, NonTerminal):
+            return symbol.name
+        if isinstance(symbol, Terminal):
+            return symbol.name
+        return None
+
+    def _handle_template_import(self, aliases: Dict[Any, Any]) -> None:
+        items = []
+        for original, alias in aliases.items():
+            orig_name = getattr(original, 'value', str(original))
+            alias_name = getattr(alias, 'value', str(alias))
+            items.append((orig_name, alias_name))
+
+        if len(items) != 1 or items[0][0] != 'PYOBJ' or items[0][1] != 'PYOBJ':
+            raise GrammarError("%import template only supports: %import template (PYOBJ)")
+
+        self.uses_pyobj_placeholders = True
+        self._ensure_pyobj_declared()
+
     def _unpack_import(self, stmt, grammar_name):
         if len(stmt.children) > 1:
             path_node, arg1 = stmt.children
@@ -1234,6 +1347,8 @@ class GrammarBuilder:
             name = mangle(name)
 
         exp = _mangle_definition_tree(exp, mangle)
+        if not is_term and isinstance(exp, Tree):
+            exp = self._process_template_placeholders(exp)
         return name, is_term, exp, params, opts
 
 
@@ -1245,6 +1360,9 @@ class GrammarBuilder:
         for stmt in tree.children:
             if stmt.data == 'import':
                 dotted_path, base_path, aliases = self._unpack_import(stmt, grammar_name)
+                if len(dotted_path) == 1 and getattr(dotted_path[0], 'value', dotted_path[0]) == 'template':
+                    self._handle_template_import(aliases)
+                    continue
                 try:
                     import_base_path, import_aliases = imports[dotted_path]
                     assert base_path == import_base_path, 'Inconsistent base_path for %s.' % '.'.join(dotted_path)
@@ -1384,7 +1502,10 @@ class GrammarBuilder:
             else:
                 rule_defs.append((name, params, exp, options))
         # resolve_term_references(term_defs)
-        return Grammar(rule_defs, term_defs, self._ignore_names)
+        grammar = Grammar(rule_defs, term_defs, self._ignore_names)
+        grammar.uses_pyobj_placeholders = self.uses_pyobj_placeholders
+        grammar.pyobj_type_names = dict(self._pyobj_type_names)
+        return grammar
 
 
 def verify_used_files(file_hashes):

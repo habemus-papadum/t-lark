@@ -72,6 +72,7 @@ class LarkOptions(Serialize):
     edit_terminals: Optional[Callable[[TerminalDef], TerminalDef]]
     import_paths: 'List[Union[str, Callable[[Union[None, str, PackageResource], str], Tuple[str, str]]]]'
     source_path: Optional[str]
+    pyobj_types: Optional[Dict[str, type]]
 
     OPTIONS_DOC = r"""
     **===  General Options  ===**
@@ -152,6 +153,8 @@ class LarkOptions(Serialize):
             A List of either paths or loader functions to specify from where grammars are imported
     source_path
             Override the source of from where the grammar was loaded. Useful for relative imports and unconventional grammar loading
+    pyobj_types
+            Mapping from placeholder type names to Python types for template mode.
     **=== End of Options ===**
     """
     if __doc__:
@@ -189,6 +192,7 @@ class LarkOptions(Serialize):
         'import_paths': [],
         'source_path': None,
         '_plugins': {},
+        'pyobj_types': None,
     }
 
     def __init__(self, options_dict: Dict[str, Any]) -> None:
@@ -277,6 +281,7 @@ class Lark(Serialize):
 
     def __init__(self, grammar: 'Union[Grammar, str, IO[str]]', **options) -> None:
         self.options = LarkOptions(options)
+        self.options.pyobj_types = dict(self.options.pyobj_types or {})
         re_module: types.ModuleType
 
         # Update which fields are serialized
@@ -395,9 +400,10 @@ class Lark(Serialize):
         if isinstance(lexer, type):
             assert issubclass(lexer, Lexer)     # XXX Is this really important? Maybe just ensure interface compliance
         else:
-            assert_config(lexer, ('basic', 'contextual', 'dynamic', 'dynamic_complete'))
-            if self.options.postlex is not None and 'dynamic' in lexer:
-                raise ConfigurationError("Can't use postlex with a dynamic lexer. Use basic or contextual instead")
+            if lexer != 'template':
+                assert_config(lexer, ('basic', 'contextual', 'dynamic', 'dynamic_complete'))
+                if self.options.postlex is not None and 'dynamic' in lexer:
+                    raise ConfigurationError("Can't use postlex with a dynamic lexer. Use basic or contextual instead")
 
         if self.options.ambiguity == 'auto':
             if self.options.parser == 'earley':
@@ -497,6 +503,7 @@ class Lark(Serialize):
         self._prepare_callbacks()
         _validate_frontend_args(self.options.parser, self.options.lexer)
         parser_conf = ParserConf(self.rules, self._callbacks, self.options.start)
+        parser_conf.grammar = self.grammar
         return _construct_parsing_frontend(
             self.options.parser,
             self.options.lexer,

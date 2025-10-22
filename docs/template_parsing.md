@@ -1,7 +1,12 @@
-# Template Mode Implementation Plan
+# Using Lark to Parse Python 3.14 Template Literals (t-strings)
 
-Implementation plan for adding a template mode to Lark that parses Python 3.14 `string.templatelib.Template` objects (t-strings) with:
+Python’s new template string literal (t-string, introduced in Python 3.14, https://docs.python.org/3/library/string.templatelib.html) produces a Template object, which contains an ordered sequence of literal string segments and interpolated values. We want to extend the Lark parsing library to parse such Template objects directly. In particular, we will implement a new parser mode that accepts a Template (from string.templatelib.Template) as input instead of a plain string. This requires enhancements in three main areas:
 
+- Grammar Syntax Extensions – allowing grammars to specify placeholder terminals for Python objects within the text.
+
+- Parser/Lexer Adjustments – modifying Lark’s parsing process (using the Earley algorithm) to lex and parse an interleaved sequence of strings and object segments.
+
+- Source Location Tracking – propagating file/offset information from the Template through to the parse output for debugging.
 
 
 ## High-level Design
@@ -18,17 +23,23 @@ tree = parser.parse(a_template_object)   # accepts Template or plain str
 - If `lexer="template"` and input is a Template, the template-aware pipeline runs
 - If input is a plain str, it is treated as a single literal segment and parsed normally
 
-### Grammar Extension: ∏ Placeholders for Python Objects (non-Tree)
+### Two type of interpolations
+Two types of interpolated values are supported by this parser mode.  
 
-- ∏ introduces a placeholder terminal that matches any interpolated Python object (including str, because strings are Python objects), not a Lark Tree
+###  Placeholders terminals for Python Objects 
+
+- the grammat extension ∏ introduces a placeholder terminal that matches any interpolated Python object 
 - For the initial version, treat ∏ as Any (future: allow ∏Type constraints)
 - If a grammar contains no ∏, interpolated Python objects will not be accepted
+- Details of the new ∏ grammar syntax follows below
 
-### Subtree Splicing is Always On
+### Lark Trees
 
 In template mode, you may splice in a pre-existing Tree regardless of whether the grammar mentions ∏.
 
 Internally, the grammar is auto-augmented with tiny injection rules that let any nonterminal accept a prebuilt subtree whose label matches what the grammar would normally produce there.
+
+The Tree's mau have beening created by prior calls to parser.parse, generated programatically, perhaps be a compiler for a higher level language.  
 
 ### Tokenization of Template
 

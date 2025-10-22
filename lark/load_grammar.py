@@ -664,6 +664,37 @@ class TerminalTreeToPattern(Transformer_NonRecursive):
         return v[0]
 
 
+class PrepareTypedPyobj(Transformer_InPlace):
+    """Create TerminalDefs for typed PYOBJ placeholders (PYOBJ__TYPENAME)."""
+
+    def __init__(self, terminals, uses_pyobj_placeholders):
+        super().__init__()
+        self.terminals = terminals
+        self.uses_pyobj_placeholders = uses_pyobj_placeholders
+        self.created_terms = set()
+
+    def terminal(self, term):
+        # Check if this is a typed PYOBJ terminal
+        if isinstance(term, Terminal) and term.name.startswith('PYOBJ__'):
+            if not self.uses_pyobj_placeholders:
+                raise GrammarError(
+                    f"Typed PYOBJ terminal {term.name} requires: %import template (PYOBJ)")
+
+            # Create terminal if not already created
+            if term.name not in self.created_terms:
+                from .lexer import PatternPlaceholder, TerminalDef
+
+                # Extract type name from PYOBJ__TYPENAME
+                type_name = term.name[7:].lower()  # Remove "PYOBJ__" and lowercase
+
+                # Create the terminal definition
+                typed_term = TerminalDef(term.name, PatternPlaceholder(type_name))
+                self.terminals.append(typed_term)
+                self.created_terms.add(term.name)
+
+        return term
+
+
 class ValidateSymbols(Transformer_InPlace):
     def value(self, v):
         v ,= v
@@ -681,13 +712,15 @@ class Grammar(Serialize):
     term_defs: List[Tuple[str, Tuple[Tree, int]]]
     rule_defs: List[Tuple[str, Tuple[str, ...], Tree, RuleOptions]]
     ignore: List[str]
+    uses_pyobj_placeholders: bool
 
-    def __init__(self, rule_defs: List[Tuple[str, Tuple[str, ...], Tree, RuleOptions]], term_defs: List[Tuple[str, Tuple[Tree, int]]], ignore: List[str]) -> None:
+    def __init__(self, rule_defs: List[Tuple[str, Tuple[str, ...], Tree, RuleOptions]], term_defs: List[Tuple[str, Tuple[Tree, int]]], ignore: List[str], uses_pyobj_placeholders: bool = False) -> None:
         self.term_defs = term_defs
         self.rule_defs = rule_defs
         self.ignore = ignore
+        self.uses_pyobj_placeholders = uses_pyobj_placeholders
 
-    __serialize_fields__ = 'term_defs', 'rule_defs', 'ignore'
+    __serialize_fields__ = 'term_defs', 'rule_defs', 'ignore', 'uses_pyobj_placeholders'
 
     def compile(self, start, terminals_to_keep) -> Tuple[List[TerminalDef], List[Rule], List[str]]:
         # We change the trees in-place (to support huge grammars)
@@ -704,13 +737,33 @@ class Grammar(Serialize):
         for name, (term_tree, priority) in term_defs:
             if term_tree is None:  # Terminal added through %declare
                 continue
+            # Skip empty check for PYOBJ terminals (they're special)
+            if name == 'PYOBJ' or name.startswith('PYOBJ__'):
+                continue
             expansions = list(term_tree.find_data('expansion'))
             if len(expansions) == 1 and not expansions[0].children:
                 raise GrammarError("Terminals cannot be empty (%s)" % name)
 
         transformer = PrepareLiterals() * TerminalTreeToPattern()
-        terminals = [TerminalDef(name, transformer.transform(term_tree), priority)
-                     for name, (term_tree, priority) in term_defs if term_tree]
+        terminals = []
+        for name, (term_tree, priority) in term_defs:
+            if not term_tree:
+                continue
+
+            # Special handling for PYOBJ and typed PYOBJ terminals
+            if name == 'PYOBJ' or name.startswith('PYOBJ__'):
+                from .lexer import PatternPlaceholder
+
+                # Extract type name for typed PYOBJ
+                if name.startswith('PYOBJ__'):
+                    type_name = name[7:].lower()  # Remove "PYOBJ__"
+                    pattern = PatternPlaceholder(type_name)
+                else:
+                    pattern = PatternPlaceholder()
+
+                terminals.append(TerminalDef(name, pattern, priority))
+            else:
+                terminals.append(TerminalDef(name, transformer.transform(term_tree), priority))
 
         # =================
         #  Compile Rules
@@ -718,7 +771,8 @@ class Grammar(Serialize):
 
         # 1. Pre-process terminals
         anon_tokens_transf = PrepareAnonTerminals(terminals)
-        transformer = PrepareLiterals() * ValidateSymbols() * anon_tokens_transf  # Adds to terminals
+        typed_pyobj_transf = PrepareTypedPyobj(terminals, self.uses_pyobj_placeholders)
+        transformer = PrepareLiterals() * ValidateSymbols() * typed_pyobj_transf * anon_tokens_transf  # Adds to terminals
 
         # 2. Inline Templates
 
@@ -812,7 +866,77 @@ class Grammar(Serialize):
             if unused:
                 logger.debug("Unused terminals: %s", [t.name for t in unused])
 
+        # Augment grammar for template mode if needed
+        if self.uses_pyobj_placeholders:
+            augment_grammar_for_template_mode(compiled_rules, terminals)
+
         return terminals, compiled_rules, self.ignore
+
+
+def augment_grammar_for_template_mode(compiled_rules: List[Rule], terminals: List['TerminalDef']) -> Dict[str, str]:
+    """Add tree injection rules for template mode.
+
+    For each nonterminal N and each label it can produce,
+    add: N: TREE__LABEL with expand_single_child=True
+
+    Args:
+        compiled_rules: List of compiled rules
+        terminals: List of terminal definitions (will be modified)
+
+    Returns:
+        Dict mapping label -> terminal name (e.g., "add" -> "TREE__ADD")
+    """
+    from .lexer import PatternTree, TerminalDef
+
+    # Step 1: Compute labels per nonterminal
+    labels_per_nonterminal: Dict[NonTerminal, set] = {}
+
+    for rule in compiled_rules:
+        origin = rule.origin
+        if origin not in labels_per_nonterminal:
+            labels_per_nonterminal[origin] = set()
+
+        # Label is alias if present, else origin name
+        label = rule.alias if rule.alias else origin.name
+        labels_per_nonterminal[origin].add(label)
+
+    # Step 2: Collect all unique labels
+    all_labels = set()
+    for label_set in labels_per_nonterminal.values():
+        all_labels.update(label_set)
+
+    # Step 3: Create TREE__LABEL terminals and mapping
+    tree_terminal_map = {}
+    for label in all_labels:
+        term_name = f"TREE__{label.upper()}"
+        tree_terminal_map[label] = term_name
+
+        # Create the terminal definition
+        pattern = PatternTree(label)
+        term_def = TerminalDef(term_name, pattern, TOKEN_DEFAULT_PRIORITY)
+        terminals.append(term_def)
+
+    # Step 4: Add injection rules
+    new_rules = []
+    for origin, labels in labels_per_nonterminal.items():
+        for label in labels:
+            term_name = tree_terminal_map[label]
+            term = Terminal(term_name)
+
+            # Create rule: origin: TREE__LABEL
+            rule = Rule(
+                origin=origin,
+                expansion=[term],
+                order=len(compiled_rules) + len(new_rules),  # Assign unique order
+                alias=None,  # No alias needed
+                options=RuleOptions(expand1=True)  # Important: collapse single-child
+            )
+            new_rules.append(rule)
+
+    # Add rules to the list (mutate in place)
+    compiled_rules.extend(new_rules)
+
+    return tree_terminal_map
 
 
 PackageResource = namedtuple('PackageResource', 'pkg_name path')
@@ -907,8 +1031,25 @@ def symbol_from_strcase(s):
 
 @inline_args
 class PrepareGrammar(Transformer_InPlace):
+    def __init__(self):
+        super().__init__()
+        self.grammar_builder = None  # Will be set by GrammarBuilder if needed
+
     def terminal(self, name):
-        return Terminal(str(name), filter_out=name.startswith('_'))
+        name_str = str(name)
+
+        # Check for typed placeholder syntax: PYOBJ[typename]
+        if name_str.startswith('PYOBJ[') and name_str.endswith(']'):
+            # Extract type name
+            type_name = name_str[6:-1]  # Strip "PYOBJ[" and "]"
+
+            # Create typed terminal name: PYOBJ[image] -> PYOBJ__IMAGE
+            term_name = f"PYOBJ__{type_name.upper()}"
+
+            # Return the typed terminal
+            return Terminal(term_name, filter_out=False)
+
+        return Terminal(name_str, filter_out=name.startswith('_'))
 
     def nonterminal(self, name):
         return NonTerminal(name.value)
@@ -1091,6 +1232,7 @@ class GrammarBuilder:
 
     _definitions: Dict[str, Definition]
     _ignore_names: List[str]
+    uses_pyobj_placeholders: bool
 
     def __init__(self, global_keep_all_tokens: bool=False, import_paths: Optional[List[Union[str, Callable]]]=None, used_files: Optional[Dict[str, str]]=None) -> None:
         self.global_keep_all_tokens = global_keep_all_tokens
@@ -1099,6 +1241,7 @@ class GrammarBuilder:
 
         self._definitions: Dict[str, Definition] = {}
         self._ignore_names: List[str] = []
+        self.uses_pyobj_placeholders = False
 
     def _grammar_error(self, is_term, msg, *names):
         args = {}
@@ -1178,6 +1321,21 @@ class GrammarBuilder:
             self._ignore_names.append(name)
             self._definitions[name] = Definition(True, t, options=TOKEN_DEFAULT_PRIORITY)
 
+    def _create_pyobj_terminal(self):
+        """Create the PYOBJ terminal definition for template mode."""
+        # Instead of creating a complex tree, we'll directly create the terminal
+        # during grammar compilation by adding it to the term_defs.
+        # For now, we just mark that PYOBJ needs to be created.
+        # The actual PatternPlaceholder will be created in Grammar.compile
+
+        # Create a placeholder definition that will be replaced during compile
+        # Use a special marker pattern
+        pyobj_tree = ST('expansions', [
+            ST('expansion', [])
+        ])
+
+        self._definitions['PYOBJ'] = Definition(True, pyobj_tree, options=TOKEN_DEFAULT_PRIORITY)
+
     def _unpack_import(self, stmt, grammar_name):
         if len(stmt.children) > 1:
             path_node, arg1 = stmt.children
@@ -1245,6 +1403,20 @@ class GrammarBuilder:
         for stmt in tree.children:
             if stmt.data == 'import':
                 dotted_path, base_path, aliases = self._unpack_import(stmt, grammar_name)
+
+                # Check for special template import
+                if dotted_path == ('template',):
+                    if len(aliases) != 1 or 'PYOBJ' not in aliases:
+                        raise GrammarError(
+                            "%import template only supports: %import template (PYOBJ)")
+
+                    # Flag grammar as using template mode
+                    self.uses_pyobj_placeholders = True
+
+                    # Create PYOBJ terminal
+                    self._create_pyobj_terminal()
+                    continue
+
                 try:
                     import_base_path, import_aliases = imports[dotted_path]
                     assert base_path == import_base_path, 'Inconsistent base_path for %s.' % '.'.join(dotted_path)
@@ -1384,7 +1556,7 @@ class GrammarBuilder:
             else:
                 rule_defs.append((name, params, exp, options))
         # resolve_term_references(term_defs)
-        return Grammar(rule_defs, term_defs, self._ignore_names)
+        return Grammar(rule_defs, term_defs, self._ignore_names, self.uses_pyobj_placeholders)
 
 
 def verify_used_files(file_hashes):

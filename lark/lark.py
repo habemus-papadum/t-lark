@@ -150,6 +150,8 @@ class LarkOptions(Serialize):
             A callback for editing the terminals before parse.
     import_paths
             A List of either paths or loader functions to specify from where grammars are imported
+    pyobj_types
+            Mapping from type names used in ``PYOBJ[...]`` to Python types when using ``lexer="template"``.
     source_path
             Override the source of from where the grammar was loaded. Useful for relative imports and unconventional grammar loading
     **=== End of Options ===**
@@ -188,6 +190,7 @@ class LarkOptions(Serialize):
         'ordered_sets': True,
         'import_paths': [],
         'source_path': None,
+        'pyobj_types': None,
         '_plugins': {},
     }
 
@@ -243,7 +246,7 @@ class LarkOptions(Serialize):
 
 # Options that can be passed to the Lark parser, even when it was loaded from cache/standalone.
 # These options are only used outside of `load_grammar`.
-_LOAD_ALLOWED_OPTIONS = {'postlex', 'transformer', 'lexer_callbacks', 'use_bytes', 'debug', 'g_regex_flags', 'regex', 'propagate_positions', 'tree_class', '_plugins'}
+_LOAD_ALLOWED_OPTIONS = {'postlex', 'transformer', 'lexer_callbacks', 'use_bytes', 'debug', 'g_regex_flags', 'regex', 'propagate_positions', 'tree_class', '_plugins', 'pyobj_types'}
 
 _VALID_PRIORITY_OPTIONS = ('auto', 'normal', 'invert', None)
 _VALID_AMBIGUITY_OPTIONS = ('auto', 'resolve', 'explicit', 'forest')
@@ -277,6 +280,7 @@ class Lark(Serialize):
 
     def __init__(self, grammar: 'Union[Grammar, str, IO[str]]', **options) -> None:
         self.options = LarkOptions(options)
+        self.options.pyobj_types = dict(self.options.pyobj_types or {})
         re_module: types.ModuleType
 
         # Update which fields are serialized
@@ -395,7 +399,7 @@ class Lark(Serialize):
         if isinstance(lexer, type):
             assert issubclass(lexer, Lexer)     # XXX Is this really important? Maybe just ensure interface compliance
         else:
-            assert_config(lexer, ('basic', 'contextual', 'dynamic', 'dynamic_complete'))
+            assert_config(lexer, ('basic', 'contextual', 'dynamic', 'dynamic_complete', 'template'))
             if self.options.postlex is not None and 'dynamic' in lexer:
                 raise ConfigurationError("Can't use postlex with a dynamic lexer. Use basic or contextual instead")
 
@@ -451,6 +455,7 @@ class Lark(Serialize):
                 self.terminals, re_module, self.ignore_tokens, self.options.postlex,
                 self.options.lexer_callbacks, self.options.g_regex_flags, use_bytes=self.options.use_bytes, strict=self.options.strict
             )
+        self.lexer_conf.uses_pyobj_placeholders = getattr(self.grammar, 'uses_pyobj_placeholders', False)
 
         if self.options.parser:
             self.parser = self._build_parser()
@@ -534,6 +539,9 @@ class Lark(Serialize):
         lexer_conf.g_regex_flags = options.g_regex_flags
         lexer_conf.skip_validation = True
         lexer_conf.postlex = options.postlex
+        lexer_conf.uses_pyobj_placeholders = any(
+            getattr(t.pattern, 'type', '') == 'placeholder' for t in lexer_conf.terminals
+        )
         return lexer_conf
 
     def _load(self: _T, f: Any, **kwargs) -> _T:

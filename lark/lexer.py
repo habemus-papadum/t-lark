@@ -113,10 +113,56 @@ class PatternRE(Pattern):
         return self._get_width()[1]
 
 
+class PatternPlaceholder(Pattern):
+    """Pattern for Python object placeholders inserted by template mode."""
+
+    __serialize_fields__ = 'value', 'flags', 'expected_type'
+
+    type: ClassVar[str] = "placeholder"
+
+    def __init__(self, expected_type: Optional[str] = None) -> None:
+        super().__init__("<pyobj>", flags=())
+        self.expected_type = expected_type
+
+    def to_regexp(self) -> str:
+        return r'(?!.*)'
+
+    @property
+    def min_width(self) -> int:
+        return 0
+
+    @property
+    def max_width(self) -> int:
+        return 0
+
+
+class PatternTree(Pattern):
+    """Pattern used for Tree splicing tokens in template mode."""
+
+    __serialize_fields__ = 'value', 'flags', 'label'
+
+    type: ClassVar[str] = "tree"
+
+    def __init__(self, label: str) -> None:
+        super().__init__(f"<tree:{label}>", flags=())
+        self.label = label
+
+    def to_regexp(self) -> str:
+        return r'(?!.*)'
+
+    @property
+    def min_width(self) -> int:
+        return 0
+
+    @property
+    def max_width(self) -> int:
+        return 0
+
+
 class TerminalDef(Serialize):
     "A definition of a terminal"
     __serialize_fields__ = 'name', 'pattern', 'priority'
-    __serialize_namespace__ = PatternStr, PatternRE
+    __serialize_namespace__ = PatternStr, PatternRE, PatternPlaceholder, PatternTree
 
     name: str
     pattern: Pattern
@@ -332,7 +378,8 @@ def _get_match(re_, regexp, s, flags):
         return m.group(0)
 
 def _create_unless(terminals, g_regex_flags, re_, use_bytes):
-    tokens_by_type = classify(terminals, lambda t: type(t.pattern))
+    relevant = [t for t in terminals if isinstance(t.pattern, (PatternStr, PatternRE))]
+    tokens_by_type = classify(relevant, lambda t: type(t.pattern))
     assert len(tokens_by_type) <= 2, tokens_by_type.keys()
     embedded_strs = set()
     callback = {}
@@ -558,7 +605,7 @@ class BasicLexer(AbstractBasicLexer):
                 except self.re.error:
                     raise LexError("Cannot compile token %s: %s" % (t.name, t.pattern))
 
-                if t.pattern.min_width == 0:
+                if t.pattern.min_width == 0 and t.pattern.type not in {"placeholder", "tree"}:
                     raise LexError("Lexer does not allow zero-width terminals. (%s: %s)" % (t.name, t.pattern))
                 if t.pattern.type == "re":
                     terminal_to_regexp[t] = regexp

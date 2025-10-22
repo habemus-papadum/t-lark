@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Tuple, ClassVar, Sequence
+from typing import Any, Dict, Optional, Tuple, ClassVar, Sequence, List, Set
 
 from .utils import Serialize
 
@@ -134,3 +134,53 @@ class Rule(Serialize):
 
 
 ###}
+
+
+def augment_grammar_for_template_mode(terminals: List['TerminalDef'], rules: List[Rule]) -> Dict[str, Terminal]:
+    """Augment grammar so that template mode can splice pre-built trees.
+
+    Adds TREE__* terminals and single-child rules that accept those terminals.
+    Returns a mapping from tree label to the injected Terminal symbol.
+    """
+
+    from .lexer import TerminalDef, PatternTree
+
+    existing_terminals: Dict[str, TerminalDef] = {t.name: t for t in terminals}
+
+    labels_per_origin: Dict[NonTerminal, Set[str]] = {}
+    for rule in rules:
+        label = rule.alias if rule.alias else rule.origin.name
+        labels_per_origin.setdefault(rule.origin, set()).add(label)
+
+    all_labels: Set[str] = set()
+    for label_set in labels_per_origin.values():
+        all_labels.update(label_set)
+
+    tree_terminals: Dict[str, Terminal] = {}
+    for label in sorted(all_labels):
+        term_name = f"TREE__{label.upper()}"
+        if term_name not in existing_terminals:
+            terminal_def = TerminalDef(term_name, PatternTree(label))
+            terminals.append(terminal_def)
+            existing_terminals[term_name] = terminal_def
+        tree_terminals[label] = Terminal(term_name)
+
+    existing_expansions = {(rule.origin, tuple(rule.expansion)) for rule in rules}
+    next_order: Dict[NonTerminal, int] = {}
+    for rule in rules:
+        next_order[rule.origin] = max(next_order.get(rule.origin, -1), rule.order)
+
+    for origin, labels in labels_per_origin.items():
+        for label in labels:
+            symbol = tree_terminals[label]
+            expansion = (symbol,)
+            key = (origin, expansion)
+            if key in existing_expansions:
+                continue
+            order = next_order.get(origin, -1) + 1
+            next_order[origin] = order
+            new_rule = Rule(origin, expansion, order=order, alias=None, options=RuleOptions(expand1=True))
+            rules.append(new_rule)
+            existing_expansions.add(key)
+
+    return tree_terminals

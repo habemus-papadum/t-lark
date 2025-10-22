@@ -1,246 +1,189 @@
-Below is a final, implementation‑oriented plan for adding a template mode to Lark that parses Python 3.13 string.templatelib.Template objects (your “t‑strings”) with:
+# Template Mode Implementation Plan
 
-Interpolated Python strings treated as standalone nodes/tokens (not merged into surrounding text).
+Implementation plan for adding a template mode to Lark that parses Python 3.14 `string.templatelib.Template` objects (t-strings) with:
 
-Always-available subtree splicing: you can splice in a pre‑existing Lark Tree anywhere it fits the grammar, even if the grammar contains no ∏ placeholders.
 
-∏ (Pi) only denotes Python objects (non‑Tree) in the grammar.
 
-The plan is written for a future you (or your tech lead) to implement directly.
+## High-level Design
 
-High‑level design (“how it will work”)
+### New Mode, No New API Surface
 
-New mode, no new API surface
 Users opt into template parsing by constructing Lark with Earley and a new lexer mode:
 
+```python
 parser = Lark(grammar, parser="earley", lexer="template")
 tree = parser.parse(a_template_object)   # accepts Template or plain str
+```
 
+- If `lexer="template"` and input is a Template, the template-aware pipeline runs
+- If input is a plain str, it is treated as a single literal segment and parsed normally
 
-If lexer="template" and input is a Template, the template-aware pipeline runs.
+### Grammar Extension: ∏ Placeholders for Python Objects (non-Tree)
 
-If input is a plain str, it is treated as a single literal segment and parsed normally.
+- ∏ introduces a placeholder terminal that matches any interpolated Python object (including str, because strings are Python objects), not a Lark Tree
+- For the initial version, treat ∏ as Any (future: allow ∏Type constraints)
+- If a grammar contains no ∏, interpolated Python objects will not be accepted
 
-Grammar extension: ∏ placeholders for Python objects (non‑Tree)
+### Subtree Splicing is Always On
 
-∏ introduces a placeholder terminal that matches any interpolated Python object (including str, because strings are Python objects), not a Lark Tree.
+In template mode, you may splice in a pre-existing Tree regardless of whether the grammar mentions ∏.
 
-For the initial version, treat ∏ as Any; (future: allow ∏Type constraints).
+Internally, the grammar is auto-augmented with tiny injection rules that let any nonterminal accept a prebuilt subtree whose label matches what the grammar would normally produce there.
 
-If a grammar contains no ∏, interpolated Python objects will not be accepted.
+### Tokenization of Template
 
-Subtree splicing is always on
-
-In template mode, you may splice in a pre‑existing Tree regardless of whether the grammar mentions ∏.
-
-Internally, the grammar is auto‑augmented with tiny injection rules that let any nonterminal accept a prebuilt subtree whose label matches what the grammar would normally produce there. (Details in the steps.)
-
-Tokenization of Template
 The template is linearized into a token stream:
 
-Static text segments → lexed into normal tokens using the grammar’s regex/literal rules.
+- **Static text segments** → lexed into normal tokens using the grammar's regex/literal rules
+- **Interpolated Python objects (non-Tree)** → a single placeholder token (type from ∏), value = the Python object (including str)
+- **Interpolated Tree** → a single special token that stands for that completed subtree. The parser reduces it via the injection rules and we splice the underlying Tree back into the final result
 
-Interpolated Python objects (non‑Tree) → a single placeholder token (type from ∏), value = the Python object (including str).
-
-Interpolated Tree → a single special token that stands for that completed subtree. The parser reduces it via the injection rules and we splice the underlying Tree back into the final result.
-
-Source location tracking
+### Source Location Tracking
 
 Every produced token carries absolute file line, column, start_pos, end_pos sourced from:
 
-static segment metadata (filename, offsets), and
+- Static segment metadata (filename, offsets)
+- Interpolation expression metadata (location of {...} expression)
 
-interpolation expression metadata (location of {…} expression)
+When we inject a Tree, its token inherits the tree's own meta (if present); after splice, the parent meta remains correct.
 
-When we inject a Tree, its token inherits the tree’s own meta (if present); after splice, the parent meta remains correct.
+### Errors
 
-Errors
+- Parse stops on the first syntax error (as Lark normally does)
+- Error messages report file/line/column for the failing token (static or interpolation)
+- If a Python object appears where no ∏ is allowed, the error points to the interpolation's source
 
-Parse stops on the first syntax error (as Lark normally does).
+## Implementation Details (Step-by-Step)
 
-Error messages report file/line/column for the failing token (static or interpolation).
+### 0) Files You'll Touch (Orientation)
 
-If a Python object appears where no ∏ is allowed, the error points to the interpolation’s source.
+**Grammar & building:**
+- `lark/load_grammar.py` (or the grammar loader module)
+- `lark/grammar.py` (TerminalDef, Rule, RuleOptions)
 
-Implementation details (step‑by‑step)
-0) Files you’ll touch (orientation)
+**Lexing / frontends:**
+- `lark/parser_frontends.py` (new frontend selection)
+- `lark/lexer.py` (add a tiny Pattern subclass or helper)
 
-Grammar & building
+**Earley integration:**
+- `lark/parsers/earley.py` (no edits to algorithm; pass a custom term matcher)
 
-lark/load_grammar.py (or the grammar loader module)
+**Template mode:**
+- New module: `lark/template_mode.py` (template tokenizer, utilities)
 
-lark/grammar.py (TerminalDef, Rule, RuleOptions)
+**Tests:**
+- `tests/test_template_mode.py`
 
-Lexing / frontends
+**Key principle:** Keep core algorithms unmodified; hook via frontends and small grammar augmentation.
 
-lark/parser_frontends.py (new frontend selection)
+### 1) Grammar Support for ∏ (Python Objects; Non-Tree Only)
 
-lark/lexer.py (add a tiny Pattern subclass or helper)
+**Goal:** Parse ∏ inside grammar rules as a terminal that accepts external Python objects.
 
-Earley integration
+**Parsing ∏:**
+- Extend Lark's grammar grammar to recognize a placeholder terminal token `PI_PLACEHOLDER` for the literal ∏
+- In the post-parse grammar builder, whenever ∏ appears in a production RHS, replace it with a generated terminal name (all-caps), e.g. `PYOBJ`
+- Initial version: one global terminal `PYOBJ` for all occurrences (Any)
+- Future: ∏Type → PYOBJ_TYPENAME, and store expected_type
 
-lark/parsers/earley.py (no edits to algorithm; pass a custom term matcher)
+**TerminalDef for PYOBJ:**
+- Create a `TerminalDef('PYOBJ', PatternPlaceholder())`
+- Implement `PatternPlaceholder` (lightweight Pattern subclass) whose `to_regexp()` returns an impossible regex (it is never matched by text; it's matched by our custom matcher against injected tokens)
 
-Template mode
+**Flagging the grammar:**
+- Set `grammar.uses_python_placeholders = True` if any ∏ seen (for helpful diagnostics, e.g., reject `lexer!="template"` with an actionable message)
+- Behavior: Only grammars that contain ∏ can accept interpolated Python objects. Otherwise, such objects cause a syntax error
 
-New module: lark/template_mode.py (template tokenizer, utilities)
+### 2) Always-On Subtree Splicing via Grammar Augmentation
 
-Tests
+**Goal:** Allow splicing in prebuilt Tree values anywhere a corresponding nonterminal (or labeled production) is expected—without requiring the grammar to mention it.
 
-tests/test_template_mode.py
+**Collect accepted labels per nonterminal:**
+- For each grammar rule N, compute the set labels(N) of tree labels the grammar produces for N:
+  - If a production has an alias `-> label`, include `label`
+  - Else include the rule name N (default label)
+- Build the union set AllLabels = ⋃_N labels(N)
 
-Keep core algorithms unmodified; hook via frontends and small grammar augmentation.
+**Create special terminals for trees:**
+- For each label in AllLabels, introduce a terminal `TREE__{LABEL_UPPER}` with a `PatternTree(label='label')`
 
-1) Grammar support for ∏ (Python objects; non‑Tree only)
+**Add injection rules:**
+- For each nonterminal N and for each label ∈ labels(N), add:
+  ```
+  N: TREE__LABEL   // with RuleOptions.expand1 = True
+  ```
+- No alias here, but set `expand1=True` so that this rule collapses to its single child at build time
+- During parsing, shifting `TREE__LABEL` then reducing `N: TREE__LABEL` will inline the child (which we later replace by the actual Tree)
 
-Goal: parse ∏ inside grammar rules as a terminal that accepts external Python objects.
-
-Parsing ∏:
-
-Extend Lark’s grammar grammar to recognize a placeholder terminal token PI_PLACEHOLDER for the literal ∏.
-
-In the post‑parse grammar builder, whenever ∏ appears in a production RHS, replace it with a generated terminal name (all‑caps), e.g. PYOBJ.
-
-Initial version: one global terminal PYOBJ for all occurrences (Any).
-
-(Future: ∏Type → PYOBJ_TYPENAME, and store expected_type.)
-
-TerminalDef for PYOBJ:
-
-Create a TerminalDef('PYOBJ', PatternPlaceholder()).
-
-Implement PatternPlaceholder (lightweight Pattern subclass) whose to_regexp() returns an impossible regex (it is never matched by text; it’s matched by our custom matcher against injected tokens).
-
-Flagging the grammar:
-
-Set grammar.uses_python_placeholders = True if any ∏ seen (for helpful diagnostics, e.g., reject lexer!="template" with an actionable message).
-
-Behavior: Only grammars that contain ∏ can accept interpolated Python objects. Otherwise, such objects cause a syntax error.
-
-2) Always‑on subtree splicing via grammar augmentation
-
-Goal: Allow splicing in prebuilt Tree values anywhere a corresponding nonterminal (or labeled production) is expected—without requiring the grammar to mention it.
-
-Collect accepted labels per nonterminal:
-
-For each grammar rule N, compute the set labels(N) of tree labels the grammar produces for N:
-
-If a production has an alias -> label, include label.
-
-Else include the rule name N (default label).
-
-Build the union set AllLabels = ⋃_N labels(N).
-
-Create special terminals for trees:
-
-For each label in AllLabels, introduce a terminal TREE__{LABEL_UPPER} with a PatternTree(label='label').
-
-Add injection rules:
-
-For each nonterminal N and for each label ∈ labels(N), add:
-
-N: TREE__LABEL   // with RuleOptions.expand1 = True
-
-
-No alias here, but set expand1=True so that this rule collapses to its single child at build time.
-
-During parsing, shifting TREE__LABEL then reducing N: TREE__LABEL will inline the child (which we later replace by the actual Tree).
-
-Why expand1=True?
+**Why expand1=True?**
 It prevents creating an extra N wrapper in the result; the output stays shaped like a normal parse would (top label stays label).
 
-Result: Any inserted Tree with .data == label can be accepted wherever the grammar expects N that can produce label.
+**Result:** Any inserted Tree with `.data == label` can be accepted wherever the grammar expects N that can produce label.
 
-3) Template frontend: select the template lexing pipeline
+### 3) Template Frontend: Select the Template Lexing Pipeline
 
-In parser_frontends.get_frontend, add a case:
+In `parser_frontends.get_frontend`, add a case:
 
+```python
 elif parser == "earley" and lexer == "template":
     return TemplateEarley  # new frontend class
+```
 
+**TemplateEarley.__init__(...):**
+- Build `parser_conf` as Earley does (same grammar analysis)
+- Build and stash:
+  - `labels_per_nonterminal` (from step 2)
+  - maps for `TREE__LABEL` terminals
+  - flag if `PYOBJ` exists
+- Create the Earley parser instance with a custom term matcher (next step)
 
-TemplateEarley.__init__(...):
+**TemplateEarley.parse(input):**
+- If input is Template, call `template_token_stream = tokenize_template(input, ...)`
+- Else (plain str), treat as a single static segment (works as normal string input)
+- Pass the token stream to Earley: `parser.parse(template_token_stream, start)`
 
-Build parser_conf as Earley does (same grammar analysis).
+### 4) The Template Tokenizer (The Heart)
 
-Build and stash:
+Create `tokenize_template(template, ctx)` in `lark/template_mode.py`:
 
-labels_per_nonterminal (from step 2)
+**Inputs:**
+- `template`: a Python 3.14 `string.templatelib.Template` instance
+- `ctx` provides:
+  - access to the grammar's Traditional/Basic Lexer (for static text)
+  - filename and a source map for each static segment and interpolation {...}:
+    - for each static string: `(file, start_offset, end_offset)`
+    - for each interpolation: `(file, expr_start, expr_end)`
+  - mapping `label -> TREE__LABEL` terminal names
 
-maps for TREE__LABEL terminals
+**Algorithm:**
 
-flag if PYOBJ exists
+Iterate `zip(template.strings, template.interpolations)` plus trailing string:
 
-Create the Earley parser instance with a custom term matcher (next step).
+1. **For each static string s:**
+   - If empty, skip
+   - Lex s using the grammar's lexer with a TextSlice that embeds the absolute offsets so token `.line/.column/.pos` reflect the real file positions
+   - Yield all produced tokens (ignore tokens are omitted as usual)
 
-TemplateEarley.parse(input):
+2. **For each interpolation v:**
+   - **If v is a Lark Tree:**
+     - Determine its top label `lbl = v.data`
+     - Lookup the terminal name `tname = "TREE__" + lbl.upper()`
+     - Create `Token(tname, v)`, set its meta from `v.meta` if available, else from the interpolation source span
+     - Yield the token
+   - **Else (v is a Python object, including str):**
+     - Require that grammar defines ∏ (i.e., PYOBJ exists); else it will be an unexpected token at parse time (we let Earley report it)
+     - Create `Token("PYOBJ", v)`, set meta from the interpolation source span
+     - Yield the token
 
-If input is Template, call template_token_stream = tokenize_template(input, ...).
+3. After the loop, lex and yield tokens for the final trailing static string (if any)
 
-Else (plain str), treat as a single static segment (works as normal string input).
+**Important:** Interpolated Python strings are not merged into adjacent static text; they appear as PYOBJ tokens. If someone wants merging semantics, they should use plain t-strings outside this mode.
 
-Pass the token stream to Earley: parser.parse(template_token_stream, start).
-
-4) The template tokenizer (the heart)
-
-Create tokenize_template(template, ctx) in lark/template_mode.py:
-
-Inputs:
-
-template: a Python 3.14 string.templatelib.Template instance
-
-ctx provides:
-
-access to the grammar’s Traditional/Basic Lexer (for static text)
-
-filename and a source map for each static segment and interpolation {…}:
-
-for each static string: (file, start_offset, end_offset)
-
-for each interpolation: (file, expr_start, expr_end)
-
-mapping label -> TREE__LABEL terminal names
-
-Algorithm:
-
-Iterate zip(template.strings, template.interpolations) plus trailing string:
-
-For each static string s:
-
-If empty, skip.
-
-Lex s using the grammar’s lexer with a TextSlice that embeds the absolute offsets so token .line/.column/.pos reflect the real file positions.
-
-Yield all produced tokens (ignore tokens are omitted as usual).
-
-For each interpolation v:
-
-If v is a Lark Tree:
-
-Determine its top label lbl = v.data.
-
-Lookup the terminal name tname = "TREE__" + lbl.upper().
-
-Create Token(tname, v), set its meta from v.meta if available, else from the interpolation source span.
-
-Yield the token.
-
-Else (v is a Python object, including str):
-
-Require that grammar defines ∏ (i.e., PYOBJ exists); else it will be an unexpected token at parse time (we let Earley report it).
-
-Create Token("PYOBJ", v), set meta from the interpolation source span.
-
-Yield the token.
-
-After the loop, lex and yield tokens for the final trailing static string (if any).
-
-Important revision honored: Interpolated Python strings are not merged into adjacent static text; they appear as PYOBJ tokens. If someone wants merging semantics, they should use plain t‑strings outside this mode.
-
-5) Terminal matching in Earley
+### 5) Terminal Matching in Earley
 
 Provide a term matcher to Earley that understands our special terminals:
 
+```python
 def term_match(term, token):
     name = term.name
     if name == "PYOBJ":
@@ -254,20 +197,20 @@ def term_match(term, token):
                 and token.value.data == name[len("TREE__"):].lower())
     # normal terminals
     return isinstance(token, Token) and token.type == name
+```
 
+No changes to Earley algorithm; we just pass this matcher to `earley.Parser(...)`.
 
-No changes to Earley algorithm; we just pass this matcher to earley.Parser(...).
+### 6) Splicing Actual Subtrees in the Final Result
 
-6) Splicing actual subtrees in the final result
+After `Earley.parse(...)` returns a tree:
 
-After Earley.parse(...) returns a tree:
+- Replace any `Token("TREE__LABEL", value=<Tree ...>)` child by the underlying Tree
+- Thanks to the `expand1=True` injection rules, the extra N wrapper was already collapsed during construction, so the surrounding structure matches what a normal parse would produce
 
-Replace any Token("TREE__LABEL", value=<Tree ...>) child by the underlying Tree.
+This can be a tiny recursive post-pass:
 
-Thanks to the expand1=True injection rules, the extra N wrapper was already collapsed during construction, so the surrounding structure matches what a normal parse would produce.
-
-This can be a tiny recursive post‑pass:
-
+```python
 def splice_inserted_trees(node):
     if isinstance(node, Tree):
         new_children = []
@@ -279,43 +222,45 @@ def splice_inserted_trees(node):
                     splice_inserted_trees(ch)
                 new_children.append(ch)
         node.children = new_children
+```
 
-7) Source locations (meta) correctness
+### 7) Source Locations (Meta) Correctness
 
-Static tokens: by lexing with TextSlice(file_text, start, end), tokens get precise .line, .column, .pos_in_stream in the file domain.
+**Static tokens:** By lexing with `TextSlice(file_text, start, end)`, tokens get precise `.line`, `.column`, `.pos_in_stream` in the file domain.
 
-Object tokens (PYOBJ): set line/column/start_pos/end_pos from the interpolation expression source span.
+**Object tokens (PYOBJ):** Set line/column/start_pos/end_pos from the interpolation expression source span.
 
-Tree tokens (TREE__LABEL):
+**Tree tokens (TREE__LABEL):**
+- If the inserted Tree already has `.meta` from a prior parse, copy those fields onto the token (so the parent's meta is computed correctly)
+- Otherwise, fall back to the interpolation source span
+- Since the injection rule collapses with `expand1=True`, parent node meta is computed from the child, so final meta remains accurate after the splice step
 
-If the inserted Tree already has .meta from a prior parse, copy those fields onto the token (so the parent’s meta is computed correctly).
+### 8) Errors
 
-Otherwise, fall back to the interpolation source span.
+**Unexpected object where grammar has no ∏:**
+- Earley raises with token position; we can wrap to say: `"Interpolated object at {file}:{line}:{col} not allowed here (no ∏ placeholder in this context)."`
 
-Since the injection rule collapses with expand1=True, parent node meta is computed from the child, so final meta remains accurate after the splice step.
-
-8) Errors
-
-Unexpected object where grammar has no ∏ → Earley raises with token position; we can wrap to say:
-“Interpolated object at {file}:{line}:{col} not allowed here (no ∏ placeholder in this context).”
-
-Tree label not accepted: if a Tree('foo') appears where the expected nonterminal N does not list foo in labels(N), the derivation won’t match; Earley error will point to that token’s source. The message can include “tree label ‘foo’ not valid for nonterminal ‘N’” if you enhance the error reporter (optional).
+**Tree label not accepted:**
+- If a `Tree('foo')` appears where the expected nonterminal N does not list foo in labels(N), the derivation won't match
+- Earley error will point to that token's source
+- The message can include `"tree label 'foo' not valid for nonterminal 'N'"` if you enhance the error reporter (optional)
 
 As with Lark, parsing stops at the first error by default.
 
-Edge cases & nuances to account for
+## Edge Cases & Nuances to Account For
 
-Consecutive objects (… {obj1}{obj2} …): you’ll emit back‑to‑back PYOBJ/TREE__… tokens. That’s fine; grammar must allow them (e.g., via ∏ ∏ or a repetition).
+- **Consecutive objects** (`… {obj1}{obj2} …`): you'll emit back-to-back PYOBJ/TREE__… tokens. That's fine; grammar must allow them (e.g., via `∏ ∏` or a repetition)
 
-Strings as objects: a Python str interpolation is just another PYOBJ. It does not join with neighbors; grammar must explicitly accept ∏.
+- **Strings as objects:** a Python str interpolation is just another PYOBJ. It does not join with neighbors; grammar must explicitly accept ∏
 
-Tree label mapping: We only accept a spliced Tree by its top label. We do not deep‑validate internal shape; we assume it was produced by the same (or compatible) grammar. (You can add an optional verifier later.)
+- **Tree label mapping:** We only accept a spliced Tree by its top label. We do not deep-validate internal shape; we assume it was produced by the same (or compatible) grammar (you can add an optional verifier later)
 
-Aliases vs rule names: Because we compute labels(N) from aliases (-> label) and default labels (rule name), injected trees labeled label will be accepted where N can produce label. This mirrors normal Lark output structure.
+- **Aliases vs rule names:** Because we compute labels(N) from aliases (`-> label`) and default labels (rule name), injected trees labeled `label` will be accepted where N can produce `label`. This mirrors normal Lark output structure
 
-Positions when the Template strips braces: use the interpolation’s {…} expression position for PYOBJ/TREE__… tokens so error arrows point at the expression that supplied the value.
+- **Positions when the Template strips braces:** use the interpolation's {...} expression position for PYOBJ/TREE__… tokens so error arrows point at the expression that supplied the value
 
-Short usage example (mentally test the pipeline)
+## Short Usage Example (Mentally Test the Pipeline)
+```lark
 // grammar.lark
 ?start: stmt+
 
@@ -327,7 +272,9 @@ stmt: "print" "(" ∏ ")" ";"
 ?term: NUMBER
 %import common.NUMBER
 %ignore " "
+```
 
+```python
 from lark import Lark, Tree
 from string.templatelib import Template  # Python 3.13
 
@@ -342,102 +289,84 @@ sub = Tree('add', [Tree('term', [Token('NUMBER','1')]),
 
 T2 = Template(["", ";"], [sub])                  # only a spliced tree + ';'
 print(parser.parse(T2))                          # OK even though grammar has no ∏ here
+```
 
-Testing plan (minimal but sufficient)
+## Testing Plan (Minimal but Sufficient)
 
-Happy paths
+### Happy Paths
 
-Static‑only template equals plain parse.
+- Static-only template equals plain parse
+- ∏ accepts str, int, custom objects as PYOBJ
+- Splice `Tree('label')` where N can produce label
+- Consecutive placeholders (object, tree, object)
 
-∏ accepts str, int, custom objects as PYOBJ.
+### Errors
 
-Splice Tree('label') where N can produce label.
+- Interpolated object where no ∏ allowed → error at interpolation span
+- Tree with label that is not produced by the expected nonterminal → error at interpolation span
 
-Consecutive placeholders (object, tree, object).
-
-Errors
-
-Interpolated object where no ∏ allowed → error at interpolation span.
-
-Tree with label that is not produced by the expected nonterminal → error at interpolation span.
-
-Meta
+### Meta
 
 Verify token and node meta (line/col/start/end) for:
+- Static tokens inside first/middle/last segments
+- Object token meta points to {...} expression
+- Spliced tree meta preserved
 
-static tokens inside first/middle/last segments,
+### Structure
 
-object token meta points to {…} expression,
+- Ensure result trees from splicing are shape-identical to normal parses (no extra wrapper nodes) thanks to expand1
 
-spliced tree meta preserved.
+## Work Breakdown (Concrete Tasks)
 
-Structure
+### Grammar Loader
 
-Ensure result trees from splicing are shape‑identical to normal parses (no extra wrapper nodes) thanks to expand1.
+- Parse ∏ → inject `TerminalDef('PYOBJ', PatternPlaceholder())`
+- Flag grammar: `uses_python_placeholders`
 
-Work breakdown (concrete tasks)
-
-Grammar loader
-
-Parse ∏ → inject TerminalDef('PYOBJ', PatternPlaceholder()).
-
-Flag grammar: uses_python_placeholders.
-
-Tree‑injection augmentation
+### Tree-Injection Augmentation
 
 During grammar finalization:
+- Build `labels_per_nonterminal`
+- Create terminals `TREE__{LABEL}` with `PatternTree(label)`
+- Add rules `N: TREE__LABEL` with `RuleOptions.expand1 = True`
 
-Build labels_per_nonterminal.
+### Frontend
 
-Create terminals TREE__{LABEL} with PatternTree(label).
+- Add `TemplateEarley` in `parser_frontends.py`
+- Provide `term_match` as specified
+- Route `lexer="template"` to this frontend
 
-Add rules N: TREE__LABEL with RuleOptions.expand1 = True.
+### Template Tokenizer
 
-Frontend
+Implement `tokenize_template(template, ctx)`:
+- Lex static strings with TextSlice to preserve absolute positions
+- Yield `Token('PYOBJ', value)` for objects; `Token('TREE__LABEL', tree)` for trees
+- Attach meta as described
 
-Add TemplateEarley in parser_frontends.py.
+### Post-Parse Splice
 
-Provide term_match as specified.
+- Implement `splice_inserted_trees(tree)`; call before returning
 
-Route lexer="template" to this frontend.
+### Errors / Messages (Optional Polish)
 
-Template tokenizer
+- Wrap UnexpectedInput to mention "interpolated object/tree" and source span
 
-Implement tokenize_template(template, ctx):
+### Tests
 
-Lex static strings with TextSlice to preserve absolute positions.
+- Create `tests/test_template_mode.py` covering the matrix above
 
-Yield Token('PYOBJ', value) for objects; Token('TREE__LABEL', tree) for trees.
+## Notes on Future Enhancements (Out of Scope for First Cut)
 
-Attach meta as described.
+- **Typed placeholders:** ∏Type with runtime isinstance checks in term_match
+- **Multi-node splicing:** allow an interpolation to produce multiple siblings (would require grammar support or a richer token→sequence mechanism)
+- **Multiple-error recovery:** exploit Earley forest to report more than one error
 
-Post‑parse splice
+## Done Criteria
 
-Implement splice_inserted_trees(tree); call before returning.
+`lexer="template"` + `parser="earley"` parses:
 
-Errors / messages (optional polish)
-
-Wrap UnexpectedInput to mention “interpolated object/tree” and source span.
-
-Tests
-
-Create tests/test_template_mode.py covering the matrix above.
-
-Notes on future enhancements (out of scope for first cut)
-
-Typed placeholders: ∏Type with runtime isinstance checks in term_match.
-
-Multi‑node splicing: allow an interpolation to produce multiple siblings (would require grammar support or a richer token->sequence mechanism).
-
-Multiple‑error recovery: exploit Earley forest to report more than one error.
-
-Done criteria
-
-lexer="template" + parser="earley" parses:
-
-(a) Template built from static + objects + trees,
-
-(b) plain strings (for parity).
+a) Template built from static + objects + trees
+b) Plain strings (for parity)
 
 Trees spliced via interpolation produce the same shape as normal parses (no stray wrapper nodes).
 

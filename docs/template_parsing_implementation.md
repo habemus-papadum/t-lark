@@ -908,6 +908,282 @@ class TestTemplateMode(unittest.TestCase):
     # TODO: Add test for meta preservation
 
 
+class TestPaintDSL(unittest.TestCase):
+    """Comprehensive tests for graphics DSL with paint abstraction.
+
+    This test suite demonstrates a realistic use case where a DSL supports
+    both static color specifications and interpolated Python objects, as well
+    as tree splicing for metaprogramming.
+    """
+
+    # Mock Image class for testing
+    class Image:
+        def __init__(self, path):
+            self.path = path
+        def __repr__(self):
+            return f"Image({self.path!r})"
+        def __eq__(self, other):
+            return isinstance(other, TestPaintDSL.Image) and self.path == other.path
+
+    GRAPHICS_GRAMMAR = r"""
+    %import template (PYOBJ)
+
+    start: object+
+
+    object: "object" "{" "stroke:" paint "fill:" paint "}"
+
+    paint: color
+         | image
+
+    color: NUMBER "," NUMBER "," NUMBER  -> color
+
+    image: PYOBJ[image]  -> image
+
+    %import common.NUMBER
+    %ignore " "
+    """
+
+    def setUp(self):
+        """Create parser with Image type mapping."""
+        self.parser = Lark(
+            self.GRAPHICS_GRAMMAR,
+            parser="earley",
+            lexer="template",
+            pyobj_types={'image': self.Image}
+        )
+
+    def test_static_only_parse(self):
+        """Pure static string with no interpolations."""
+        program = t"object { stroke: 255,0,0 fill: 0,255,0 }"
+        tree = self.parser.parse(program)
+
+        # Should have one object
+        self.assertEqual(tree.data, 'start')
+        self.assertEqual(len(tree.children), 1)
+
+        obj = tree.children[0]
+        self.assertEqual(obj.data, 'object')
+
+        # Both paints should be colors
+        stroke_paint = obj.children[0]
+        fill_paint = obj.children[1]
+        self.assertEqual(stroke_paint.data, 'color')
+        self.assertEqual(fill_paint.data, 'color')
+
+    def test_interpolate_image_objects(self):
+        """Interpolate Image objects via typed PYOBJ placeholders."""
+        texture = self.Image("wood_texture.png")
+        gradient = self.Image("gradient.png")
+
+        program = t"object { stroke: {texture} fill: {gradient} }"
+        tree = self.parser.parse(program)
+
+        obj = tree.children[0]
+        stroke_paint = obj.children[0]
+        fill_paint = obj.children[1]
+
+        # Both should be image nodes
+        self.assertEqual(stroke_paint.data, 'image')
+        self.assertEqual(fill_paint.data, 'image')
+
+        # Extract the Image objects from tokens
+        stroke_token = stroke_paint.children[0]
+        fill_token = fill_paint.children[0]
+
+        self.assertEqual(stroke_token.type, 'PYOBJ__IMAGE')
+        self.assertEqual(fill_token.type, 'PYOBJ__IMAGE')
+
+        self.assertEqual(stroke_token.value, texture)
+        self.assertEqual(fill_token.value, gradient)
+
+    def test_type_mismatch_error(self):
+        """PYOBJ[image] should reject non-Image types."""
+        program = t"object { stroke: {'not an image'} fill: 0,0,255 }"
+
+        with self.assertRaises(TypeError) as ctx:
+            self.parser.parse(program)
+
+        self.assertIn('Expected Image', str(ctx.exception))
+        self.assertIn('got str', str(ctx.exception))
+
+    def test_type_mismatch_integer(self):
+        """PYOBJ[image] should reject integers."""
+        program = t"object { stroke: {42} fill: 0,0,0 }"
+
+        with self.assertRaises(TypeError) as ctx:
+            self.parser.parse(program)
+
+        self.assertIn('Expected Image', str(ctx.exception))
+        self.assertIn('got int', str(ctx.exception))
+
+    def test_tree_splicing_color(self):
+        """Parse color fragment, then splice it into paint position."""
+        # Parse color independently
+        red = self.parser.parse("255,0,0")
+        self.assertEqual(red.data, 'color')
+
+        # Splice into object
+        program = t"object { stroke: {red} fill: {red} }"
+        tree = self.parser.parse(program)
+
+        obj = tree.children[0]
+        stroke_paint = obj.children[0]
+        fill_paint = obj.children[1]
+
+        # Both should be color nodes (spliced)
+        self.assertEqual(stroke_paint.data, 'color')
+        self.assertEqual(fill_paint.data, 'color')
+
+    def test_tree_splicing_with_control_flow(self):
+        """Use Python control flow to build program with spliced trees."""
+        red = self.parser.parse("255,0,0")
+        blue = self.parser.parse("0,0,255")
+        green = self.parser.parse("0,255,0")
+
+        colors = [red, green, blue]
+        palette = []
+
+        for i, color in enumerate(colors):
+            if i % 2 == 0:
+                palette.append(t"object { stroke: {color} fill: {color} }")
+            else:
+                palette.append(t"object { stroke: {color} fill: 0,0,0 }")
+
+        program = t"".join(palette)
+        tree = self.parser.parse(program)
+
+        # Should have 3 objects
+        self.assertEqual(len(tree.children), 3)
+
+        # First object (i=0, even): red for both
+        obj0 = tree.children[0]
+        self.assertEqual(obj0.children[0].data, 'color')
+        self.assertEqual(obj0.children[1].data, 'color')
+
+        # Second object (i=1, odd): green stroke, static black fill
+        obj1 = tree.children[1]
+        self.assertEqual(obj1.children[0].data, 'color')
+        self.assertEqual(obj1.children[1].data, 'color')
+
+    def test_mixed_static_object_tree(self):
+        """Combine static text, interpolated objects, and spliced trees."""
+        red = self.parser.parse("255,0,0")
+        texture = self.Image("pattern.png")
+
+        program = t"""
+        object { stroke: 128,128,128 fill: 64,64,64 }
+        object { stroke: {red} fill: {texture} }
+        object { stroke: {texture} fill: 0,255,128 }
+        """
+
+        tree = self.parser.parse(program)
+        self.assertEqual(len(tree.children), 3)
+
+        # Object 1: static colors only
+        obj1 = tree.children[0]
+        self.assertEqual(obj1.children[0].data, 'color')
+        self.assertEqual(obj1.children[1].data, 'color')
+
+        # Object 2: spliced tree + interpolated image
+        obj2 = tree.children[1]
+        self.assertEqual(obj2.children[0].data, 'color')  # red tree
+        self.assertEqual(obj2.children[1].data, 'image')  # texture object
+
+        # Object 3: interpolated image + static color
+        obj3 = tree.children[2]
+        self.assertEqual(obj3.children[0].data, 'image')  # texture object
+        self.assertEqual(obj3.children[1].data, 'color')  # static color
+
+    def test_error_wrong_tree_label(self):
+        """Splicing a tree with label not in grammar should fail."""
+        # Create tree with invalid label
+        wrong_tree = Tree('circle', [])
+
+        program = t"object { stroke: {wrong_tree} fill: 0,0,0 }"
+
+        with self.assertRaises((UnexpectedToken, ValueError)) as ctx:
+            self.parser.parse(program)
+
+        # Should mention the invalid label
+        self.assertIn('circle', str(ctx.exception).lower())
+
+    def test_error_untyped_object_not_allowed(self):
+        """Interpolating an arbitrary object where only typed PYOBJ exists."""
+        # Grammar only has PYOBJ[image], no untyped PYOBJ
+        some_list = [1, 2, 3]
+        program = t"object { stroke: {some_list} fill: 0,0,0 }"
+
+        # Should fail because list doesn't match PYOBJ[image]
+        with self.assertRaises((UnexpectedToken, TypeError)):
+            self.parser.parse(program)
+
+    def test_error_malformed_static_syntax(self):
+        """Static syntax errors should be caught normally."""
+        # Missing third color component
+        program = t"object { stroke: 255,0 fill: 0,0,0 }"
+
+        with self.assertRaises(UnexpectedToken):
+            self.parser.parse(program)
+
+    def test_multiple_objects_mixed_paints(self):
+        """Complex program with many objects using various paint types."""
+        red = self.parser.parse("255,0,0")
+        img1 = self.Image("texture1.png")
+        img2 = self.Image("texture2.png")
+
+        program = t"""
+        object { stroke: 255,255,255 fill: 0,0,0 }
+        object { stroke: {red} fill: 100,100,100 }
+        object { stroke: {img1} fill: {img2} }
+        object { stroke: 50,50,50 fill: {red} }
+        object { stroke: {img1} fill: 200,200,200 }
+        """
+
+        tree = self.parser.parse(program)
+        self.assertEqual(len(tree.children), 5)
+
+        # Verify each object parses correctly
+        for obj in tree.children:
+            self.assertEqual(obj.data, 'object')
+            self.assertEqual(len(obj.children), 2)  # stroke and fill
+
+            # Each paint should be either color or image
+            for paint in obj.children:
+                self.assertIn(paint.data, ['color', 'image'])
+
+    def test_image_object_preservation(self):
+        """Verify Image objects are preserved through parsing."""
+        img = self.Image("test.png")
+
+        program = t"object { stroke: {img} fill: 0,0,0 }"
+        tree = self.parser.parse(program)
+
+        # Extract the image from the parse tree
+        image_paint = tree.children[0].children[0]
+        image_token = image_paint.children[0]
+
+        # Should be the exact same object
+        self.assertIs(image_token.value, img)
+        self.assertEqual(image_token.value.path, "test.png")
+
+    def test_static_equivalent_to_plain_string(self):
+        """Static-only template should parse identically to plain string."""
+        static_text = "object { stroke: 255,0,0 fill: 0,255,0 }"
+
+        tree1 = self.parser.parse(t"{static_text}")  # template with string interpolation
+        tree2 = self.parser.parse(static_text)  # plain string
+
+        # Note: t"{static_text}" creates PYOBJ token with string value,
+        # which won't match the grammar (no untyped PYOBJ allowed)
+        # Instead, test with actual static template
+        tree1 = self.parser.parse(t"object { stroke: 255,0,0 fill: 0,255,0 }")
+        tree2 = self.parser.parse("object { stroke: 255,0,0 fill: 0,255,0 }")
+
+        # Both should produce identical structure
+        self.assertEqual(tree1.data, tree2.data)
+        self.assertEqual(len(tree1.children), len(tree2.children))
+
+
 if __name__ == '__main__':
     unittest.main()
 ```

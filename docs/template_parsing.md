@@ -342,6 +342,213 @@ def compile_conditions(checks):
     return parser.parse(program)
 ```
 
+### Comprehensive Example: Graphics DSL with Paint Abstraction
+
+This example demonstrates a realistic DSL for styling graphical objects, where paint values can be specified either as static color strings or as interpolated Python image objects. It showcases the power of template mode to seamlessly blend static syntax with typed objects and pre-parsed trees.
+
+#### Grammar
+
+```lark
+%import template (PYOBJ)
+
+start: object+
+
+object: "object" "{" "stroke:" paint "fill:" paint "}"
+
+paint: color
+     | image
+
+color: NUMBER "," NUMBER "," NUMBER  -> color
+
+image: PYOBJ[image]  -> image
+
+%import common.NUMBER
+%ignore " "
+```
+
+**Key features:**
+- `paint` can be either a static color specification or a typed Python object
+- The `color` rule parses RGB triplets from static text
+- The `image` rule accepts only objects of type `Image` via typed placeholder
+- Objects have both stroke and fill paints
+
+#### Setting Up the Parser
+
+```python
+from lark import Lark
+
+# Placeholder Image class for this example
+class Image:
+    def __init__(self, path):
+        self.path = path
+    def __repr__(self):
+        return f"Image({self.path!r})"
+
+# Create parser with type mapping
+grammar = open('graphics.lark').read()
+parser = Lark(grammar, parser="earley", lexer="template",
+              pyobj_types={'image': Image})
+```
+
+#### Scenario 1: Pure Static String
+
+Parse a complete object specification from static text only:
+
+```python
+# All colors specified as static text
+program = t"object { stroke: 255,0,0 fill: 0,255,0 }"
+tree = parser.parse(program)
+
+# Result: Tree with two color nodes
+print(tree.pretty())
+# start
+#   object
+#     color    [255,0,0]
+#     color    [0,255,0]
+```
+
+This works exactly like traditional string parsing - no interpolations.
+
+#### Scenario 2: Interpolating Image Objects
+
+Mix static syntax with runtime Python objects:
+
+```python
+# Create image objects at runtime
+texture = Image("wood_texture.png")
+gradient = Image("gradient.png")
+
+# Interpolate them directly into the DSL
+program = t"object { stroke: {texture} fill: {gradient} }"
+tree = parser.parse(program)
+
+# The PYOBJ tokens carry the actual Image objects
+print(tree.pretty())
+# start
+#   object
+#     image    [Token(PYOBJ__IMAGE, Image('wood_texture.png'))]
+#     image    [Token(PYOBJ__IMAGE, Image('gradient.png'))]
+
+# Extract the image objects from the parse tree
+stroke_image = tree.children[0].children[0].children[0].value
+fill_image = tree.children[0].children[1].children[0].value
+print(stroke_image)  # Image('wood_texture.png')
+print(fill_image)    # Image('gradient.png')
+```
+
+**Type safety**: If you try to pass a non-Image object, you get a clear error:
+
+```python
+program = t"object { stroke: {'not an image'} fill: 0,0,255 }"
+parser.parse(program)
+# Raises: TypeError: Expected Image for PYOBJ[image], got str
+```
+
+#### Scenario 3: Tree Splicing for Metaprogramming
+
+Parse color fragments separately, then compose them dynamically:
+
+```python
+# Parse colors independently
+red = parser.parse("255,0,0")      # Tree('color', [...])
+blue = parser.parse("0,0,255")     # Tree('color', [...])
+green = parser.parse("0,255,0")    # Tree('color', [...])
+
+# Use Python control flow to select colors
+colors = [red, green, blue]
+palette = []
+
+for i, color in enumerate(colors):
+    if i % 2 == 0:
+        # Even indices: use parsed color tree for both stroke and fill
+        palette.append(t"object { stroke: {color} fill: {color} }")
+    else:
+        # Odd indices: mix parsed tree with static color
+        palette.append(t"object { stroke: {color} fill: 0,0,0 }")
+
+# Combine into full program
+program = t"".join(palette)
+tree = parser.parse(program)
+
+print(f"Generated {len(tree.children)} objects")
+# Generated 3 objects
+```
+
+**Why this works**: The grammar augmentation creates injection rules that let `paint` accept a `TREE__COLOR` token. When we interpolate a `Tree('color', ...)`, it matches seamlessly.
+
+#### Scenario 4: Mixed Static, Objects, and Trees
+
+Combine all three approaches in a single program:
+
+```python
+red = parser.parse("255,0,0")
+texture = Image("pattern.png")
+
+# Object 1: static color for both
+# Object 2: tree splice + interpolated image
+# Object 3: interpolated image + static color
+program = t"""
+object { stroke: 128,128,128 fill: 64,64,64 }
+object { stroke: {red} fill: {texture} }
+object { stroke: {texture} fill: 0,255,128 }
+"""
+
+tree = parser.parse(program)
+# All three objects parse correctly, each with different paint combinations
+```
+
+#### Error Cases
+
+**1. Interpolating a Python object where no PYOBJ placeholder exists:**
+
+```python
+# The grammar has no PYOBJ rule that accepts arbitrary objects
+# Only PYOBJ[image] is allowed
+some_list = [1, 2, 3]
+program = t"object { stroke: {some_list} fill: 0,0,0 }"
+parser.parse(program)
+# Raises: UnexpectedToken: Interpolated Python object not allowed here
+```
+
+**2. Type mismatch for typed placeholder:**
+
+```python
+program = t"object { stroke: {42} fill: 0,0,0 }"
+parser.parse(program)
+# Raises: TypeError: Expected Image for PYOBJ[image], got int
+```
+
+**3. Splicing a tree with the wrong label:**
+
+```python
+# Create a tree with label that grammar doesn't produce
+wrong_tree = Tree('circle', [])
+program = t"object { stroke: {wrong_tree} fill: 0,0,0 }"
+parser.parse(program)
+# Raises: ValueError: Cannot splice Tree('circle'): grammar does not produce this label
+```
+
+**4. Malformed static syntax:**
+
+```python
+# Missing a color component
+program = t"object { stroke: 255,0 fill: 0,0,0 }"
+parser.parse(program)
+# Raises: UnexpectedToken (standard parse error)
+```
+
+#### Key Insights
+
+This example demonstrates:
+
+1. **Seamless integration**: Static text, typed Python objects, and pre-parsed trees all work together naturally
+2. **Type safety**: `PYOBJ[image]` ensures only Image objects are accepted, catching errors at parse time
+3. **Compositional power**: Parse fragments independently, then use Python's control flow to build complex programs
+4. **No serialization overhead**: Image objects (or tensors, arrays, etc.) pass through the parser directly without string conversion
+5. **Clear error messages**: Type mismatches and structural errors are reported with helpful context
+
+This pattern is particularly powerful for DSLs in computer graphics, machine learning, and other domains where data is naturally represented as rich Python objects rather than strings.
+
 ## Edge Cases & Nuances
 
 - **Consecutive objects** (`t"{obj1}{obj2}"`): Emits back-to-back PYOBJ/TREE__ tokens with an empty static string between. Grammar must allow them (e.g., via `PYOBJ PYOBJ` or `PYOBJ+`)

@@ -1,3 +1,5 @@
+Note: Created outside of normal GH fork network to temporarily work around https://github.com/openai/codex/issues/4489
+
 # Lark - a parsing toolkit for Python
 
 Lark is a parsing toolkit for Python, built with a focus on ergonomics, performance and modularity.

@@ -24,7 +24,7 @@ from .common import LexerConf, ParserConf, _ParserArgType, _LexerArgType
 from .lexer import Lexer, BasicLexer, TerminalDef, LexerThread, Token
 from .parse_tree_builder import ParseTreeBuilder
 from .parser_frontends import _validate_frontend_args, _get_lexer_callbacks, _deserialize_parsing_frontend, _construct_parsing_frontend
-from .grammar import Rule
+from .grammar import Rule, augment_grammar_for_template_mode
 
 
 try:
@@ -72,6 +72,7 @@ class LarkOptions(Serialize):
     edit_terminals: Optional[Callable[[TerminalDef], TerminalDef]]
     import_paths: 'List[Union[str, Callable[[Union[None, str, PackageResource], str], Tuple[str, str]]]]'
     source_path: Optional[str]
+    pyobj_types: Optional[Dict[str, type]]
 
     OPTIONS_DOC = r"""
     **===  General Options  ===**
@@ -152,6 +153,9 @@ class LarkOptions(Serialize):
             A List of either paths or loader functions to specify from where grammars are imported
     source_path
             Override the source of from where the grammar was loaded. Useful for relative imports and unconventional grammar loading
+    pyobj_types
+            Mapping from placeholder names (e.g. ``{"image": Image.Image}``) to the Python types accepted by
+            ``PYOBJ[placeholder]`` in template mode.
     **=== End of Options ===**
     """
     if __doc__:
@@ -188,6 +192,7 @@ class LarkOptions(Serialize):
         'ordered_sets': True,
         'import_paths': [],
         'source_path': None,
+        'pyobj_types': None,
         '_plugins': {},
     }
 
@@ -243,7 +248,7 @@ class LarkOptions(Serialize):
 
 # Options that can be passed to the Lark parser, even when it was loaded from cache/standalone.
 # These options are only used outside of `load_grammar`.
-_LOAD_ALLOWED_OPTIONS = {'postlex', 'transformer', 'lexer_callbacks', 'use_bytes', 'debug', 'g_regex_flags', 'regex', 'propagate_positions', 'tree_class', '_plugins'}
+_LOAD_ALLOWED_OPTIONS = {'postlex', 'transformer', 'lexer_callbacks', 'use_bytes', 'debug', 'g_regex_flags', 'regex', 'propagate_positions', 'tree_class', '_plugins', 'pyobj_types'}
 
 _VALID_PRIORITY_OPTIONS = ('auto', 'normal', 'invert', None)
 _VALID_AMBIGUITY_OPTIONS = ('auto', 'resolve', 'explicit', 'forest')
@@ -277,6 +282,8 @@ class Lark(Serialize):
 
     def __init__(self, grammar: 'Union[Grammar, str, IO[str]]', **options) -> None:
         self.options = LarkOptions(options)
+        if self.options.pyobj_types is None:
+            self.options.pyobj_types = {}
         re_module: types.ModuleType
 
         # Update which fields are serialized
@@ -395,7 +402,7 @@ class Lark(Serialize):
         if isinstance(lexer, type):
             assert issubclass(lexer, Lexer)     # XXX Is this really important? Maybe just ensure interface compliance
         else:
-            assert_config(lexer, ('basic', 'contextual', 'dynamic', 'dynamic_complete'))
+            assert_config(lexer, ('basic', 'contextual', 'dynamic', 'dynamic_complete', 'template'))
             if self.options.postlex is not None and 'dynamic' in lexer:
                 raise ConfigurationError("Can't use postlex with a dynamic lexer. Use basic or contextual instead")
 
@@ -422,6 +429,9 @@ class Lark(Serialize):
 
         # Compile the EBNF grammar into BNF
         self.terminals, self.rules, self.ignore_tokens = self.grammar.compile(self.options.start, terminals_to_keep)
+        self._template_tree_terminals: Dict[str, str] = {}
+        if self.options.lexer == 'template':
+            self._template_tree_terminals = augment_grammar_for_template_mode(self.rules, self.terminals)
 
         if self.options.edit_terminals:
             for t in self.terminals:
@@ -497,6 +507,9 @@ class Lark(Serialize):
         self._prepare_callbacks()
         _validate_frontend_args(self.options.parser, self.options.lexer)
         parser_conf = ParserConf(self.rules, self._callbacks, self.options.start)
+        if self.options.lexer == 'template':
+            parser_conf.template_tree_terminals = dict(self._template_tree_terminals)
+            parser_conf.uses_pyobj_placeholders = getattr(self.grammar, 'uses_pyobj_placeholders', False)
         return _construct_parsing_frontend(
             self.options.parser,
             self.options.lexer,

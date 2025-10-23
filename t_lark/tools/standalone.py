@@ -29,7 +29,7 @@ from abc import ABC, abstractmethod
 from types import ModuleType
 from typing import (
     TypeVar, Generic, Type, Tuple, List, Dict, Iterator, Collection, Callable, Optional, FrozenSet, Any,
-    Union, Iterable, IO, TYPE_CHECKING, overload, Sequence,
+    Hashable, Union, Iterable, IO, TYPE_CHECKING, overload, Sequence,
     Pattern as REPattern, ClassVar, Set, Mapping
 )
 ###}

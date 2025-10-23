@@ -27,7 +27,7 @@ inline_args = v_args(inline=True)
 
 IMPORT_PATHS = ['grammars']
 
-EXT = '.lark'
+EXT = '.t_lark'
 
 _RE_FLAGS = 'imslux'
 
@@ -871,7 +871,7 @@ class FromPackageLoader:
         raise IOError('Cannot find grammar in given paths') from err
 
 
-stdlib_loader = FromPackageLoader('lark', IMPORT_PATHS)
+stdlib_loader = FromPackageLoader('t_lark', IMPORT_PATHS)
 
 
 
@@ -1448,7 +1448,7 @@ class GrammarBuilder:
         else:
             # Search failed. Make Python throw a nice error.
             open(grammar_path, encoding='utf8')
-            assert False, "Couldn't import grammar %s, but a corresponding file was found at a place where lark doesn't search for it" % (dotted_path,)
+            assert False, "Couldn't import grammar %s, but a corresponding file was found at a place where t_lark doesn't search for it" % (dotted_path,)
 
 
     def validate(self) -> None:
@@ -1520,7 +1520,7 @@ def verify_used_files(file_hashes):
     return True
 
 def list_grammar_imports(grammar, import_paths=[]):
-    "Returns a list of paths to the lark grammars imported by the given grammar (recursively)"
+    "Returns a list of paths to the t_lark grammars imported by the given grammar (recursively)"
     builder = GrammarBuilder(False, import_paths)
     builder.load_grammar(grammar, '<string>')
     return list(builder.used_files.keys())

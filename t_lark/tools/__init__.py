@@ -5,7 +5,7 @@ from logging import DEBUG, INFO, WARN, ERROR
 from typing import Optional
 import warnings
 
-from lark import Lark, logger
+from t_lark import Lark, logger
 try:
     from interegular import logger as interegular_logger
     has_interegular = True
@@ -29,7 +29,7 @@ lalr_argparser.add_argument('-v', '--verbose', action='count', default=0, help="
 lalr_argparser.add_argument('-s', '--start', action='append', default=[])
 lalr_argparser.add_argument('-l', '--lexer', default='contextual', choices=('basic', 'contextual'))
 lalr_argparser.add_argument('-o', '--out', type=FileType('w', encoding='utf-8'), default=sys.stdout, help='the output file (default=stdout)')
-lalr_argparser.add_argument('grammar_file', type=FileType('r', encoding='utf-8'), help='A valid .lark file')
+lalr_argparser.add_argument('grammar_file', type=FileType('r', encoding='utf-8'), help='A valid .t_lark file')
 
 for flag in flags:
     if isinstance(flag, tuple):

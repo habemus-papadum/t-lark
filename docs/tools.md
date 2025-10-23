@@ -9,7 +9,7 @@ The resulting module provides the same interface as Lark, but with a fixed gramm
 Run using:
 
 ```bash
-python -m lark.tools.standalone
+python -m t_lark.tools.standalone
 ```
 
 For a play-by-play, read the [tutorial](http://blog.erezsh.com/create-a-stand-alone-lalr1-parser-in-python/)
@@ -23,7 +23,7 @@ Lark comes with a tool to convert grammars from [Nearley](https://github.com/Har
 
 1. Install Lark with the `nearley` component:
 ```bash
-pip install lark[nearley]
+pip install t_lark[nearley]
 ```
 
 2. Acquire a copy of the Nearley codebase. This can be done using:
@@ -36,14 +36,14 @@ git clone https://github.com/Hardmath123/nearley
 The tool can be run using:
 
 ```bash
-python -m lark.tools.nearley <grammar.ne> <start_rule> <path_to_nearley_repo>
+python -m t_lark.tools.nearley <grammar.ne> <start_rule> <path_to_nearley_repo>
 ```
 
 Here's an example of how to import nearley's calculator example into Lark:
 
 ```bash
 git clone https://github.com/Hardmath123/nearley
-python -m lark.tools.nearley nearley/examples/calculator/arithmetic.ne main ./nearley > ncalc.py
+python -m t_lark.tools.nearley nearley/examples/calculator/arithmetic.ne main ./nearley > ncalc.py
 ```
 
 You can use the output as a regular python module:
@@ -58,7 +58,7 @@ The Nearley converter also supports an experimental converter for newer JavaScri
 
 ```bash
 git clone https://github.com/Hardmath123/nearley
-python -m lark.tools.nearley nearley/examples/calculator/arithmetic.ne main nearley --es6 > ncalc.py
+python -m t_lark.tools.nearley nearley/examples/calculator/arithmetic.ne main nearley --es6 > ncalc.py
 ```
 
 #### Notes

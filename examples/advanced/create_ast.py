@@ -2,7 +2,7 @@
 Creating an AST from the parse tree
 ===================================
 
-    This example demonstrates how to transform a parse-tree into an AST using `lark.ast_utils`.
+    This example demonstrates how to transform a parse-tree into an AST using `t_lark.ast_utils`.
 
     create_transformer() collects every subclass of `Ast` subclass from the module,
     and creates a Lark transformer that builds the AST with no extra code.
@@ -14,8 +14,8 @@ import sys
 from typing import List
 from dataclasses import dataclass
 
-from lark import Lark, ast_utils, Transformer, v_args
-from lark.tree import Meta
+from t_lark import Lark, ast_utils, Transformer, v_args
+from t_lark.tree import Meta
 
 this_module = sys.modules[__name__]
 

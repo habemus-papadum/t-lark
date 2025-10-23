@@ -1,13 +1,13 @@
 import sys
 import json
 
-from lark.grammar import Rule
-from lark.lexer import TerminalDef
-from lark.tools import lalr_argparser, build_lalr
+from t_lark.grammar import Rule
+from t_lark.lexer import TerminalDef
+from t_lark.tools import lalr_argparser, build_lalr
 
 import argparse
 
-argparser = argparse.ArgumentParser(prog='python -m lark.tools.serialize', parents=[lalr_argparser],
+argparser = argparse.ArgumentParser(prog='python -m t_lark.tools.serialize', parents=[lalr_argparser],
                                     description="Lark Serialization Tool - Stores Lark's internal state & LALR analysis as a JSON file",
                                     epilog='Look at the Lark documentation for more info on the options')
 

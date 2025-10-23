@@ -4,7 +4,7 @@ class app {
 		languagePluginLoader.then(() => {
 			// If you don't require for pre-loaded Python packages, remove this promise below.
 			window.pyodide.runPythonAsync("import setuptools, micropip").then(()=>{
-				window.pyodide.runPythonAsync("micropip.install('lark-parser')").then(()=>{
+				window.pyodide.runPythonAsync("micropip.install('t_lark-parser')").then(()=>{
 					this.fetchSources(modules).then(() => {
 						window.pyodide.runPythonAsync("import " + Object.keys(modules).join("\nimport ") + "\n" + invocation + "\n").then(() => this.initializingComplete());
 					});

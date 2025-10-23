@@ -10,7 +10,7 @@ import logging
 from dataclasses import dataclass
 from typing import Generic, AnyStr
 
-logger: logging.Logger = logging.getLogger("lark")
+logger: logging.Logger = logging.getLogger("t_lark")
 logger.addHandler(logging.StreamHandler())
 # Set to highest level, since we have some warnings amongst the code
 # By default, we should not output any log messages
@@ -152,7 +152,7 @@ def get_regexp_width(expr: str) -> Union[Tuple[int, int], List[int]]:
             # we manually test for the most important info (whether the empty string is matched)
             c = regex.compile(regexp_final)
             # Python 3.11.7 introducded sre_parse.MAXWIDTH that is used instead of MAXREPEAT
-            # See lark-parser/lark#1376 and python/cpython#109859
+            # See t_lark-parser/t_lark#1376 and python/cpython#109859
             MAXWIDTH = getattr(sre_parse, "MAXWIDTH", sre_constants.MAXREPEAT)
             if c.match('') is None:
                 # MAXREPEAT is a none pickable subclass of int, therefore needs to be converted to enable caching

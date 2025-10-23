@@ -5,7 +5,7 @@ Grammar Composition
 This example shows how to do grammar composition in Lark, by creating a new
 file format that allows both CSV and JSON to co-exist.
 
-1) We define ``storage.lark``, which imports both ``csv.lark`` and ``json.lark``,
+1) We define ``storage.t_lark``, which imports both ``csv.t_lark`` and ``json.t_lark``,
   and allows them to be used one after the other.
 
   In the generated tree, each imported rule/terminal is automatically prefixed (with ``json__`` or ``csv__),
@@ -20,9 +20,9 @@ file format that allows both CSV and JSON to co-exist.
 
 """
 from pathlib import Path
-from lark import Lark
+from t_lark import Lark
 from json import dumps
-from lark.visitors import Transformer, merge_transformers
+from t_lark.visitors import Transformer, merge_transformers
 
 from eval_csv import CsvTreeToPandasDict
 from eval_json import JsonTreeToJson

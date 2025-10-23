@@ -4,16 +4,16 @@
 
 examples = {
 
-	# --- hello.lark ---
-	"hello.lark": ("""
+	# --- hello.t_lark ---
+	"hello.t_lark": ("""
 start: WORD "," WORD "!"
 
 %import common.WORD   // imports from terminal library
 %ignore " "           // Disregard spaces in text
 """, "Hello, World!"),
 
-	# --- calc.lark ---
-"calc.lark": ("""
+	# --- calc.t_lark ---
+"calc.t_lark": ("""
 ?start: sum
       | NAME "=" sum    -> assign_var
 
@@ -36,8 +36,8 @@ start: WORD "," WORD "!"
 %ignore WS_INLINE""",
 	"1 + 2 * 3 + 4"),
 
-	# --- json.lark ---
-	"json.lark": ("""
+	# --- json.t_lark ---
+	"json.t_lark": ("""
 ?start: value
 ?value: object
       | array

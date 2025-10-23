@@ -1,4 +1,4 @@
-# For usage of lark with PyInstaller. See https://pyinstaller-sample-hook.readthedocs.io/en/latest/index.html
+# For usage of t_lark with PyInstaller. See https://pyinstaller-sample-hook.readthedocs.io/en/latest/index.html
 
 import os
 

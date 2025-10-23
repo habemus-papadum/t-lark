@@ -10,12 +10,14 @@ Transformers are the common interface for processing matched rules and tokens.
 They can be used during parsing for better performance.
 
 ```python
-from lark import Lark, Transformer
+from t_lark import Lark, Transformer
+
 
 class T(Transformer):
     def INT(self, tok):
         "Convert the value of `tok` from string to int, while maintaining line number & column."
         return tok.update(value=int(tok))
+
 
 parser = Lark("""
 start: INT*
@@ -48,7 +50,7 @@ It only works with the basic and contextual lexers.
 This has the same effect of using a transformer, but can also process ignored tokens.
 
 ```python
-from lark import Lark
+from t_lark import Lark
 
 comments = []
 
@@ -89,8 +91,8 @@ However, it's sometimes more convenient instead to work with a list of all possi
 Lark provides a utility transformer for that purpose:
 
 ```python
-from lark import Lark, Tree, Transformer
-from lark.visitors import CollapseAmbiguities
+from t_lark import Lark, Tree, Transformer
+from t_lark.visitors import CollapseAmbiguities
 
 grammar = """
     !start: x y
@@ -157,19 +159,22 @@ This can often be inconvenient, if you wish the actual error to propagate upward
 But, it's easy to unwrap it at the point of calling the transformer, by catching it and raising the `VisitError.orig_exc` attribute.
 
 For example:
+
 ```python
-from lark import Lark, Transformer
-from lark.visitors import VisitError
+from t_lark import Lark, Transformer
+from t_lark.visitors import VisitError
 
 tree = Lark('start: "a"').parse('a')
+
 
 class T(Transformer):
     def start(self, x):
         raise KeyError("Original Exception")
 
+
 t = T()
 try:
-    print( t.transform(tree))
+    print(t.transform(tree))
 except VisitError as e:
     raise e.orig_exc
 ```

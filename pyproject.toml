@@ -49,7 +49,7 @@ Homepage = "https://github.com/habemus-papadum/t-lark"
 Download = "https://github.com/habemus-papadum/t-lark/tarball/master"
 
 [project.entry-points.pyinstaller40]
-hook-dirs = "lark.__pyinstaller:get_hook_dirs"
+hook-dirs = "t_lark.__pyinstaller:get_hook_dirs"
 
 [project.optional-dependencies]
 regex = ["regex"]
@@ -59,11 +59,11 @@ interegular = ["interegular>=0.3.1,<0.4.0"]
 
 [tool.setuptools]
 packages = [
-    "lark",
-    "lark.parsers",
-    "lark.tools",
-    "lark.grammars",
-    "lark.__pyinstaller",
+    "t_lark",
+    "t_lark.parsers",
+    "t_lark.tools",
+    "t_lark.grammars",
+    "t_lark.__pyinstaller",
 ]
 include-package-data = true
 
@@ -72,15 +72,15 @@ include-package-data = true
 lark = ["py.typed"]
 
 [tool.setuptools.dynamic]
-version = {attr = "lark.__version__"}
+version = {attr = "t_lark.__version__"}
 
 [tool.mypy]
-files = "lark"
+files = "t_lark"
 python_version = "3.14"
 show_error_codes = true
 enable_error_code = ["ignore-without-code", "unused-ignore"]
 exclude = [
-  "^lark/__pyinstaller",
+  "^t_lark/__pyinstaller",
 ]
 
 # You can disable imports or control per-module/file settings here
@@ -94,7 +94,7 @@ exclude_lines = [
     "if TYPE_CHECKING:"
 ]
 [tool.pyright]
-include = ["lark"]
+include = ["t_lark"]
 
 [tool.pytest.ini_options]
 minversion = "6.0"

@@ -86,7 +86,7 @@ class Parser:
         self.grammar = to_cnf(Grammar(rules))
 
     def _to_rule(self, lark_rule):
-        """Converts a lark rule, (lhs, rhs, callback, options), to a Rule."""
+        """Converts a t_lark rule, (lhs, rhs, callback, options), to a Rule."""
         assert isinstance(lark_rule.origin, NT)
         assert all(isinstance(x, Symbol) for x in lark_rule.expansion)
         return Rule(
@@ -107,7 +107,7 @@ class Parser:
         return self._to_tree(revert_cnf(parse))
 
     def _to_tree(self, rule_node):
-        """Converts a RuleNode parse tree to a lark Tree."""
+        """Converts a RuleNode parse tree to a t_lark Tree."""
         orig_rule = self.orig_rules[rule_node.rule.alias]
         children = []
         for child in rule_node.children:

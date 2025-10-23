@@ -770,8 +770,8 @@ class Lark:
 ```python
 import unittest
 from string.templatelib import Template
-from lark import Lark, Tree, Token
-from lark.exceptions import GrammarError, ConfigurationError, UnexpectedToken
+from t_lark import Lark, Tree, Token
+from t_lark.exceptions import GrammarError, ConfigurationError, UnexpectedToken
 
 
 class TestTemplateMode(unittest.TestCase):
@@ -798,7 +798,7 @@ class TestTemplateMode(unittest.TestCase):
         # Test various types
         self.assertIsNotNone(parser.parse(t"value:{42}"))
         self.assertIsNotNone(parser.parse(t"value:{'string'}"))
-        self.assertIsNotNone(parser.parse(t"value:{[1,2,3]}"))
+        self.assertIsNotNone(parser.parse(t"value:{[1, 2, 3]}"))
 
     def test_pyobj_typed(self):
         """PYOBJ[typename] should validate types."""
@@ -920,8 +920,10 @@ class TestPaintDSL(unittest.TestCase):
     class Image:
         def __init__(self, path):
             self.path = path
+
         def __repr__(self):
             return f"Image({self.path!r})"
+
         def __eq__(self, other):
             return isinstance(other, TestPaintDSL.Image) and self.path == other.path
 
@@ -954,7 +956,7 @@ class TestPaintDSL(unittest.TestCase):
 
     def test_static_only_parse(self):
         """Pure static string with no interpolations."""
-        program = t"object { stroke: 255,0,0 fill: 0,255,0 }"
+        program = t"object {stroke: 255,0,0 fill: 0,255,0 }"
         tree = self.parser.parse(program)
 
         # Should have one object
@@ -975,7 +977,7 @@ class TestPaintDSL(unittest.TestCase):
         texture = self.Image("wood_texture.png")
         gradient = self.Image("gradient.png")
 
-        program = t"object { stroke: {texture} fill: {gradient} }"
+        program = t"object {stroke: {texture} fill: {gradient} }"
         tree = self.parser.parse(program)
 
         obj = tree.children[0]
@@ -998,7 +1000,7 @@ class TestPaintDSL(unittest.TestCase):
 
     def test_type_mismatch_error(self):
         """PYOBJ[image] should reject non-Image types."""
-        program = t"object { stroke: {'not an image'} fill: 0,0,255 }"
+        program = t"object {stroke: {'not an image'} fill: 0,0,255 }"
 
         with self.assertRaises(TypeError) as ctx:
             self.parser.parse(program)
@@ -1008,7 +1010,7 @@ class TestPaintDSL(unittest.TestCase):
 
     def test_type_mismatch_integer(self):
         """PYOBJ[image] should reject integers."""
-        program = t"object { stroke: {42} fill: 0,0,0 }"
+        program = t"object {stroke: {42} fill: 0,0,0 }"
 
         with self.assertRaises(TypeError) as ctx:
             self.parser.parse(program)
@@ -1023,7 +1025,7 @@ class TestPaintDSL(unittest.TestCase):
         self.assertEqual(red.data, 'color')
 
         # Splice into object
-        program = t"object { stroke: {red} fill: {red} }"
+        program = t"object {stroke: {red} fill: {red} }"
         tree = self.parser.parse(program)
 
         obj = tree.children[0]
@@ -1045,9 +1047,9 @@ class TestPaintDSL(unittest.TestCase):
 
         for i, color in enumerate(colors):
             if i % 2 == 0:
-                palette.append(t"object { stroke: {color} fill: {color} }")
+                palette.append(t"object {stroke: {color} fill: {color} }")
             else:
-                palette.append(t"object { stroke: {color} fill: 0,0,0 }")
+                palette.append(t"object {stroke: {color} fill: 0,0,0 }")
 
         program = t"".join(palette)
         tree = self.parser.parse(program)
@@ -1071,9 +1073,9 @@ class TestPaintDSL(unittest.TestCase):
         texture = self.Image("pattern.png")
 
         program = t"""
-        object { stroke: 128,128,128 fill: 64,64,64 }
-        object { stroke: {red} fill: {texture} }
-        object { stroke: {texture} fill: 0,255,128 }
+        object {stroke: 128,128,128 fill: 64,64,64 }
+        object {stroke: {red} fill: {texture} }
+        object {stroke: {texture} fill: 0,255,128 }
         """
 
         tree = self.parser.parse(program)
@@ -1099,7 +1101,7 @@ class TestPaintDSL(unittest.TestCase):
         # Create tree with invalid label
         wrong_tree = Tree('circle', [])
 
-        program = t"object { stroke: {wrong_tree} fill: 0,0,0 }"
+        program = t"object {stroke: {wrong_tree} fill: 0,0,0 }"
 
         with self.assertRaises((UnexpectedToken, ValueError)) as ctx:
             self.parser.parse(program)
@@ -1111,7 +1113,7 @@ class TestPaintDSL(unittest.TestCase):
         """Interpolating an arbitrary object where only typed PYOBJ exists."""
         # Grammar only has PYOBJ[image], no untyped PYOBJ
         some_list = [1, 2, 3]
-        program = t"object { stroke: {some_list} fill: 0,0,0 }"
+        program = t"object {stroke: {some_list} fill: 0,0,0 }"
 
         # Should fail because list doesn't match PYOBJ[image]
         with self.assertRaises((UnexpectedToken, TypeError)):
@@ -1120,7 +1122,7 @@ class TestPaintDSL(unittest.TestCase):
     def test_error_malformed_static_syntax(self):
         """Static syntax errors should be caught normally."""
         # Missing third color component
-        program = t"object { stroke: 255,0 fill: 0,0,0 }"
+        program = t"object {stroke: 255,0 fill: 0,0,0 }"
 
         with self.assertRaises(UnexpectedToken):
             self.parser.parse(program)
@@ -1132,11 +1134,11 @@ class TestPaintDSL(unittest.TestCase):
         img2 = self.Image("texture2.png")
 
         program = t"""
-        object { stroke: 255,255,255 fill: 0,0,0 }
-        object { stroke: {red} fill: 100,100,100 }
-        object { stroke: {img1} fill: {img2} }
-        object { stroke: 50,50,50 fill: {red} }
-        object { stroke: {img1} fill: 200,200,200 }
+        object {stroke: 255,255,255 fill: 0,0,0 }
+        object {stroke: {red} fill: 100,100,100 }
+        object {stroke: {img1} fill: {img2} }
+        object {stroke: 50,50,50 fill: {red} }
+        object {stroke: {img1} fill: 200,200,200 }
         """
 
         tree = self.parser.parse(program)
@@ -1155,7 +1157,7 @@ class TestPaintDSL(unittest.TestCase):
         """Verify Image objects are preserved through parsing."""
         img = self.Image("test.png")
 
-        program = t"object { stroke: {img} fill: 0,0,0 }"
+        program = t"object {stroke: {img} fill: 0,0,0 }"
         tree = self.parser.parse(program)
 
         # Extract the image from the parse tree
@@ -1176,7 +1178,7 @@ class TestPaintDSL(unittest.TestCase):
         # Note: t"{static_text}" creates PYOBJ token with string value,
         # which won't match the grammar (no untyped PYOBJ allowed)
         # Instead, test with actual static template
-        tree1 = self.parser.parse(t"object { stroke: 255,0,0 fill: 0,255,0 }")
+        tree1 = self.parser.parse(t"object {stroke: 255,0,0 fill: 0,255,0 }")
         tree2 = self.parser.parse("object { stroke: 255,0,0 fill: 0,255,0 }")
 
         # Both should produce identical structure

@@ -1,15 +1,15 @@
 from . import html5
 from .examples import examples
 
-from lark import Lark
-from lark.tree import Tree
+from t_lark import Lark
+from t_lark.tree import Tree
 
 
 class App(html5.Div):
 	def __init__(self):
 		super().__init__("""
 			<h1>
-				<img src="lark-logo.png"> IDE
+				<img src="t_lark-logo.png"> IDE
 			</h1>
 
 			<main>

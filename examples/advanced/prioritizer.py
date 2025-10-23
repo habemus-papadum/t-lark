@@ -10,8 +10,8 @@ By negating this count, our prioritizer will prefer nodes with fewer token
 descendants. Thus, we choose the more specific parse.
 """
 
-from lark import Lark
-from lark.parsers.earley_forest import ForestVisitor, TreeForestTransformer
+from t_lark import Lark
+from t_lark.parsers.earley_forest import ForestVisitor, TreeForestTransformer
 
 class TokenPrioritizer(ForestVisitor):
 

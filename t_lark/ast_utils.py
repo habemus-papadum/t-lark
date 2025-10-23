@@ -1,12 +1,12 @@
 """
-    Module of utilities for transforming a lark.Tree into a custom Abstract Syntax Tree (AST defined in classes)
+    Module of utilities for transforming a t_lark.Tree into a custom Abstract Syntax Tree (AST defined in classes)
 """
 
 import inspect, re
 import types
 from typing import Optional, Callable
 
-from lark import Transformer, v_args
+from t_lark import Transformer, v_args
 
 class Ast:
     """Abstract class

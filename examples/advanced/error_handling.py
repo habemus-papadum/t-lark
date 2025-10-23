@@ -10,7 +10,7 @@ to proceed step-by-step. When you've achieved the correct parse-state,
 you can resume the run by returning True.
 """
 
-from lark import Token
+from t_lark import Token
 
 from _json_parser import json_parser
 

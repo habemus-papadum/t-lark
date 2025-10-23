@@ -2,11 +2,11 @@ from __future__ import absolute_import
 
 import unittest
 
-from lark import Lark
-from lark.lexer import Token
-from lark.tree import Tree
-from lark.visitors import Visitor, Transformer, Discard
-from lark.parsers.earley_forest import TreeForestTransformer, handles_ambiguity
+from t_lark import Lark
+from t_lark.lexer import Token
+from t_lark.tree import Tree
+from t_lark.visitors import Visitor, Transformer, Discard
+from t_lark.parsers.earley_forest import TreeForestTransformer, handles_ambiguity
 
 class TestTreeForestTransformer(unittest.TestCase):
 

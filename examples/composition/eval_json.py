@@ -1,6 +1,6 @@
-"Transformer for evaluating json.lark"
+"Transformer for evaluating json.t_lark"
 
-from lark import Transformer, v_args
+from t_lark import Transformer, v_args
 
 class JsonTreeToJson(Transformer):
     @v_args(inline=True)

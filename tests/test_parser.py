@@ -7,7 +7,7 @@ import os
 import sys
 from copy import copy, deepcopy
 
-from lark import Token, Transformer_NonRecursive, LexError
+from t_lark import Token, Transformer_NonRecursive, LexError
 
 from io import (
         StringIO as uStringIO,
@@ -22,15 +22,15 @@ except ImportError:
     regex = None
 
 
-import lark
-from lark import logger
-from lark.lark import Lark
-from lark.utils import TextSlice
-from lark.exceptions import GrammarError, ParseError, UnexpectedToken, UnexpectedInput, UnexpectedCharacters
-from lark.tree import Tree
-from lark.visitors import Transformer, Transformer_InPlace, v_args, Transformer_InPlaceRecursive
-from lark.lexer import Lexer, BasicLexer
-from lark.indenter import Indenter
+import t_lark
+from t_lark import logger
+from t_lark.lark import Lark
+from t_lark.utils import TextSlice
+from t_lark.exceptions import GrammarError, ParseError, UnexpectedToken, UnexpectedInput, UnexpectedCharacters
+from t_lark.tree import Tree
+from t_lark.visitors import Transformer, Transformer_InPlace, v_args, Transformer_InPlaceRecursive
+from t_lark.lexer import Lexer, BasicLexer
+from t_lark.indenter import Indenter
 
 __all__ = ['TestParsers']
 
@@ -1117,9 +1117,9 @@ def _make_parser_test(LEXER, PARSER):
         return Lark.open(gfilename, lexer=lexer_class_or_name, parser=PARSER, propagate_positions=True, **kwargs)
 
     if (LEXER, PARSER) == ('basic', 'earley'):
-        # Check that the `lark.lark` grammar represents can parse every example used in these tests.
+        # Check that the `t_lark.t_lark` grammar represents can parse every example used in these tests.
         # basic-Earley was an arbitrary choice, to make sure it only ran once.
-        lalr_parser = Lark.open(os.path.join(os.path.dirname(lark.__file__), 'grammars/lark.lark'), parser='lalr')
+        lalr_parser = Lark.open(os.path.join(os.path.dirname(t_lark.__file__), 'grammars/t_lark.t_lark'), parser='lalr')
         def wrap_with_test_grammar(f):
             def _f(x, **kwargs):
                 inst = f(x, **kwargs)
@@ -1428,7 +1428,7 @@ def _make_parser_test(LEXER, PARSER):
             self.assertSequenceEqual(x.children, ['1'])
 
         def test_templates_import(self):
-            g = _Lark_open("test_templates_import.lark", rel_to=__file__)
+            g = _Lark_open("test_templates_import.t_lark", rel_to=__file__)
             x = g.parse("[1, 2, 3, 4]")
             self.assertSequenceEqual(x.children, [Tree('sep', ['1', '2', '3', '4'])])
             x = g.parse("[1]")
@@ -1907,25 +1907,25 @@ def _make_parser_test(LEXER, PARSER):
 
 
         def test_relative_import(self):
-            l = _Lark_open('test_relative_import.lark', rel_to=__file__)
+            l = _Lark_open('test_relative_import.t_lark', rel_to=__file__)
             x = l.parse('12 lions')
             self.assertEqual(x.children, ['12', 'lions'])
 
 
         def test_relative_import_unicode(self):
-            l = _Lark_open('test_relative_import_unicode.lark', rel_to=__file__)
+            l = _Lark_open('test_relative_import_unicode.t_lark', rel_to=__file__)
             x = l.parse(u'Ø')
             self.assertEqual(x.children, [u'Ø'])
 
 
         def test_relative_import_rename(self):
-            l = _Lark_open('test_relative_import_rename.lark', rel_to=__file__)
+            l = _Lark_open('test_relative_import_rename.t_lark', rel_to=__file__)
             x = l.parse('12 lions')
             self.assertEqual(x.children, ['12', 'lions'])
 
 
         def test_relative_rule_import(self):
-            l = _Lark_open('test_relative_rule_import.lark', rel_to=__file__)
+            l = _Lark_open('test_relative_rule_import.t_lark', rel_to=__file__)
             x = l.parse('xaabby')
             self.assertEqual(x.children, [
                 'x',
@@ -1935,14 +1935,14 @@ def _make_parser_test(LEXER, PARSER):
 
         def test_relative_rule_import_drop_ignore(self):
             # %ignore rules are dropped on import
-            l = _Lark_open('test_relative_rule_import_drop_ignore.lark',
+            l = _Lark_open('test_relative_rule_import_drop_ignore.t_lark',
                            rel_to=__file__)
             self.assertRaises((ParseError, UnexpectedInput),
                               l.parse, 'xa abby')
 
 
         def test_relative_rule_import_subrule(self):
-            l = _Lark_open('test_relative_rule_import_subrule.lark',
+            l = _Lark_open('test_relative_rule_import_subrule.t_lark',
                            rel_to=__file__)
             x = l.parse('xaabby')
             self.assertEqual(x.children, [
@@ -1957,7 +1957,7 @@ def _make_parser_test(LEXER, PARSER):
 
         def test_relative_rule_import_subrule_no_conflict(self):
             l = _Lark_open(
-                'test_relative_rule_import_subrule_no_conflict.lark',
+                'test_relative_rule_import_subrule_no_conflict.t_lark',
                 rel_to=__file__)
             x = l.parse('xaby')
             self.assertEqual(x.children, [Tree('expr', [
@@ -1971,7 +1971,7 @@ def _make_parser_test(LEXER, PARSER):
 
 
         def test_relative_rule_import_rename(self):
-            l = _Lark_open('test_relative_rule_import_rename.lark',
+            l = _Lark_open('test_relative_rule_import_rename.t_lark',
                            rel_to=__file__)
             x = l.parse('xaabby')
             self.assertEqual(x.children, [
@@ -1994,22 +1994,22 @@ def _make_parser_test(LEXER, PARSER):
 
 
         def test_relative_multi_import(self):
-            l = _Lark_open("test_relative_multi_import.lark", rel_to=__file__)
+            l = _Lark_open("test_relative_multi_import.t_lark", rel_to=__file__)
             x = l.parse('12 capybaras')
             self.assertEqual(x.children, ['12', 'capybaras'])
 
         def test_relative_import_preserves_leading_underscore(self):
-            l = _Lark_open("test_relative_import_preserves_leading_underscore.lark", rel_to=__file__)
+            l = _Lark_open("test_relative_import_preserves_leading_underscore.t_lark", rel_to=__file__)
             x = l.parse('Ax')
             self.assertEqual(next(x.find_data('c')).children, ['A'])
 
         def test_relative_import_of_nested_grammar(self):
-            l = _Lark_open("grammars/test_relative_import_of_nested_grammar.lark", rel_to=__file__)
+            l = _Lark_open("grammars/test_relative_import_of_nested_grammar.t_lark", rel_to=__file__)
             x = l.parse('N')
             self.assertEqual(next(x.find_data('rule_to_import')).children, ['N'])
 
         def test_relative_import_rules_dependencies_imported_only_once(self):
-            l = _Lark_open("test_relative_import_rules_dependencies_imported_only_once.lark", rel_to=__file__)
+            l = _Lark_open("test_relative_import_rules_dependencies_imported_only_once.t_lark", rel_to=__file__)
             x = l.parse('AAA')
             self.assertEqual(next(x.find_data('a')).children, ['A'])
             self.assertEqual(next(x.find_data('b')).children, ['A'])
@@ -2622,7 +2622,7 @@ def _make_parser_test(LEXER, PARSER):
                 SYM: "a" | "b"
             """
 
-            class SYMTransformer(lark.visitors.Transformer):
+            class SYMTransformer(t_lark.visitors.Transformer):
                 def SYM(self, token):
                     return {"a": 1, "b": 2}[str(token)]
 

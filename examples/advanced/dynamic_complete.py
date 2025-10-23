@@ -17,8 +17,8 @@ valid reading of the above is:
 """
 from pprint import pprint
 
-from lark import Lark, Tree, Transformer, v_args
-from lark.visitors import Transformer_InPlace
+from t_lark import Lark, Tree, Transformer, v_args
+from t_lark.visitors import Transformer_InPlace
 
 GRAMMAR = r"""
 %import common.SIGNED_NUMBER

@@ -63,7 +63,7 @@ These are implementations of Lark in other languages. They accept Lark grammars,
 Here is a little program to parse "Hello, World!" (Or any other similar phrase):
 
 ```python
-from lark import Lark
+from t_lark import Lark
 
 l = Lark('''start: WORD "," WORD "!"
 
@@ -71,7 +71,7 @@ l = Lark('''start: WORD "," WORD "!"
             %ignore " "           // Disregard spaces in text
          ''')
 
-print( l.parse("Hello, World!") )
+print(l.parse("Hello, World!"))
 ```
 
 And the output is:

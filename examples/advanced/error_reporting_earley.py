@@ -5,7 +5,7 @@ Example-Driven Error Reporting
 A demonstration of example-driven error reporting with the Earley parser
 (See also: error_reporting_lalr.py)
 """
-from lark import Lark, UnexpectedInput
+from t_lark import Lark, UnexpectedInput
 
 from _json_parser import json_grammar   # Using the grammar from the json_parser example
 

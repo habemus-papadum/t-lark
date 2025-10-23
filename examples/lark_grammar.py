@@ -4,27 +4,27 @@ Lark Grammar
 
 A reference implementation of the Lark grammar (using LALR(1))
 """
-import lark
+import t_lark
 from pathlib import Path
 
 examples_path = Path(__file__).parent
-lark_path = Path(lark.__file__).parent
+lark_path = Path(t_lark.__file__).parent
 
-parser = lark.Lark.open(lark_path / 'grammars/lark.lark', rel_to=__file__, parser="lalr")
+parser = t_lark.Lark.open(lark_path / 'grammars/t_lark.t_lark', rel_to=__file__, parser="lalr")
 
 
 grammar_files = [
-    examples_path / 'advanced/python2.lark',
-    examples_path / 'relative-imports/multiples.lark',
-    examples_path / 'relative-imports/multiple2.lark',
-    examples_path / 'relative-imports/multiple3.lark',
-    examples_path / 'tests/no_newline_at_end.lark',
-    examples_path / 'tests/negative_priority.lark',
-    examples_path / 'standalone/json.lark',
-    lark_path / 'grammars/common.lark',
-    lark_path / 'grammars/lark.lark',
-    lark_path / 'grammars/unicode.lark',
-    lark_path / 'grammars/python.lark',
+    examples_path / 'advanced/python2.t_lark',
+    examples_path / 'relative-imports/multiples.t_lark',
+    examples_path / 'relative-imports/multiple2.t_lark',
+    examples_path / 'relative-imports/multiple3.t_lark',
+    examples_path / 'tests/no_newline_at_end.t_lark',
+    examples_path / 'tests/negative_priority.t_lark',
+    examples_path / 'standalone/json.t_lark',
+    lark_path / 'grammars/common.t_lark',
+    lark_path / 'grammars/t_lark.t_lark',
+    lark_path / 'grammars/unicode.t_lark',
+    lark_path / 'grammars/python.t_lark',
 ]
 
 def test():

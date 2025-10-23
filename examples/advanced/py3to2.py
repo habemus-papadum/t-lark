@@ -9,10 +9,10 @@ Uses reconstruct_python.py for generating the final Python 2 code.
 """
 
 
-from lark import Lark
-from lark.tree_templates import TemplateConf, TemplateTranslator
+from t_lark import Lark
+from t_lark.tree_templates import TemplateConf, TemplateTranslator
 
-from lark.indenter import PythonIndenter
+from t_lark.indenter import PythonIndenter
 from reconstruct_python import PythonReconstructor
 
 

@@ -1,6 +1,6 @@
 #
 # This example demonstrates relative imports with rule rewrite
-# see multiples.lark
+# see multiples.t_lark
 #
 
 #
@@ -11,7 +11,7 @@
 # because 9 (0b1001) is a multiple of 3
 #
 
-from lark import Lark, UnexpectedInput
+from t_lark import Lark, UnexpectedInput
 
 parser = Lark.open('multiples.lark', rel_to=__file__, parser='lalr')
 

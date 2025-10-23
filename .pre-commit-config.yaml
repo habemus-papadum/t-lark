@@ -25,11 +25,11 @@ repos:
     - id: check-yaml
     - id: debug-statements
     - id: end-of-file-fixer
-      exclude: '(^tests/.*\.lark|\.svg)$'
+      exclude: '(^tests/.*\.t_lark|\.svg)$'
     - id: mixed-line-ending
     - id: requirements-txt-fixer
     - id: trailing-whitespace
-      exclude: '(^tests/.*\.lark|\.svg)$'
+      exclude: '(^tests/.*\.t_lark|\.svg)$'
 
 - repo: https://github.com/codespell-project/codespell
   rev: v2.2.2

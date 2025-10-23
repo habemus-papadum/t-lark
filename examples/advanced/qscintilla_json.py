@@ -19,7 +19,7 @@ from PyQt5.QtGui import QColor, QFont, QFontMetrics
 from PyQt5.Qsci import QsciScintilla
 from PyQt5.Qsci import QsciLexerCustom
 
-from lark import Lark
+from t_lark import Lark
 
 
 class LexerJson(QsciLexerCustom):
@@ -79,7 +79,7 @@ class LexerJson(QsciLexerCustom):
         '''
 
         self.lark = Lark(grammar, parser=None, lexer='basic')
-        # All tokens: print([t.name for t in self.lark.parser.lexer.tokens])
+        # All tokens: print([t.name for t in self.t_lark.parser.lexer.tokens])
 
     def defaultPaper(self, style):
         return QColor(39, 40, 34)

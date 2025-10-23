@@ -112,7 +112,7 @@ class LarkOptions(Serialize):
     keep_all_tokens
             Prevent the tree builder from automagically removing "punctuation" tokens (Default: ``False``)
     tree_class
-            Lark will produce trees comprised of instances of this class instead of the default ``lark.Tree``.
+            Lark will produce trees comprised of instances of this class instead of the default ``t_lark.Tree``.
 
     **=== Algorithm Options ===**
 
@@ -167,7 +167,7 @@ class LarkOptions(Serialize):
     # - In the docstring above. It is used both for the docstring of `LarkOptions` and `Lark`, and in readthedocs
     # - As an attribute of `LarkOptions` above
     # - Potentially in `_LOAD_ALLOWED_OPTIONS` below this class, when the option doesn't change how the grammar is loaded
-    # - Potentially in `lark.tools.__init__`, if it makes sense, and it can easily be passed as a cmd argument
+    # - Potentially in `t_lark.tools.__init__`, if it makes sense, and it can easily be passed as a cmd argument
     _defaults: Dict[str, Any] = {
         'debug': False,
         'strict': False,
@@ -597,7 +597,7 @@ class Lark(Serialize):
 
         Example:
 
-            >>> Lark.open("grammar_file.lark", rel_to=__file__, parser="lalr")
+            >>> Lark.open("grammar_file.t_lark", rel_to=__file__, parser="lalr")
             Lark(...)
 
         """
@@ -616,7 +616,7 @@ class Lark(Serialize):
 
         Example:
 
-            Lark.open_from_package(__name__, "example.lark", ("grammars",), parser=...)
+            Lark.open_from_package(__name__, "example.t_lark", ("grammars",), parser=...)
         """
         package_loader = FromPackageLoader(package, search_paths)
         full_path, text = package_loader(None, grammar_path)

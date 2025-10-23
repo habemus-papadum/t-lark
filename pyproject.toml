@@ -3,7 +3,7 @@ requires = ["setuptools>=61.2.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lark"
+name = "t-lark"
 authors = [{name = "Erez Shinan", email = "erezshin@gmail.com"}]
 license = {text = "MIT"}
 description = "a modern parsing library"
@@ -45,8 +45,8 @@ Since version 1.4, only Python versions 3.14 and up are supported."""
 content-type = "text/markdown"
 
 [project.urls]
-Homepage = "https://github.com/lark-parser/lark"
-Download = "https://github.com/lark-parser/lark/tarball/master"
+Homepage = "https://github.com/habemus-papadum/t-lark"
+Download = "https://github.com/habemus-papadum/t-lark/tarball/master"
 
 [project.entry-points.pyinstaller40]
 hook-dirs = "lark.__pyinstaller:get_hook_dirs"
@@ -97,7 +97,7 @@ exclude_lines = [
 include = ["lark"]
 
 [tool.pytest.ini_options]
-minversion = 6.0
+minversion = "6.0"
 addopts = "-ra -q"
 testpaths =[
     "tests"

@@ -17,7 +17,7 @@ classifiers = [
     "Topic :: Text Processing :: Linguistic",
     "License :: OSI Approved :: MIT License",
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.14"
 dependencies = []
 dynamic = ["version"]
 
@@ -41,7 +41,7 @@ Main Features:
 - Import grammars from Nearley.js
 - Extensive test suite
 - And much more!
-Since version 1.2, only Python versions 3.8 and up are supported."""
+Since version 1.4, only Python versions 3.14 and up are supported."""
 content-type = "text/markdown"
 
 [project.urls]
@@ -76,7 +76,7 @@ version = {attr = "lark.__version__"}
 
 [tool.mypy]
 files = "lark"
-python_version = "3.8"
+python_version = "3.14"
 show_error_codes = true
 enable_error_code = ["ignore-without-code", "unused-ignore"]
 exclude = [

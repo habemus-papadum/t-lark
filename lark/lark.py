@@ -142,6 +142,8 @@ class LarkOptions(Serialize):
             How priorities should be evaluated - "auto", ``None``, "normal", "invert" (Default: "auto")
     lexer_callbacks
             Dictionary of callbacks for the lexer. May alter tokens during lexing. Use with caution.
+    pyobj_types
+            Mapping from template PYOBJ placeholder names to Python types. Used when lexer="template".
     use_bytes
             Accept an input of type ``bytes`` instead of ``str``.
     ordered_sets
@@ -183,6 +185,7 @@ class LarkOptions(Serialize):
         'lexer_callbacks': {},
         'maybe_placeholders': True,
         'edit_terminals': None,
+        'pyobj_types': None,
         'g_regex_flags': 0,
         'use_bytes': False,
         'ordered_sets': True,
@@ -243,7 +246,7 @@ class LarkOptions(Serialize):
 
 # Options that can be passed to the Lark parser, even when it was loaded from cache/standalone.
 # These options are only used outside of `load_grammar`.
-_LOAD_ALLOWED_OPTIONS = {'postlex', 'transformer', 'lexer_callbacks', 'use_bytes', 'debug', 'g_regex_flags', 'regex', 'propagate_positions', 'tree_class', '_plugins'}
+_LOAD_ALLOWED_OPTIONS = {'postlex', 'transformer', 'lexer_callbacks', 'use_bytes', 'debug', 'g_regex_flags', 'regex', 'propagate_positions', 'tree_class', '_plugins', 'pyobj_types'}
 
 _VALID_PRIORITY_OPTIONS = ('auto', 'normal', 'invert', None)
 _VALID_AMBIGUITY_OPTIONS = ('auto', 'resolve', 'explicit', 'forest')
@@ -277,6 +280,10 @@ class Lark(Serialize):
 
     def __init__(self, grammar: 'Union[Grammar, str, IO[str]]', **options) -> None:
         self.options = LarkOptions(options)
+        if self.options.pyobj_types is None:
+            self.options.pyobj_types = {}
+        else:
+            self.options.pyobj_types = dict(self.options.pyobj_types)
         re_module: types.ModuleType
 
         # Update which fields are serialized
@@ -395,7 +402,7 @@ class Lark(Serialize):
         if isinstance(lexer, type):
             assert issubclass(lexer, Lexer)     # XXX Is this really important? Maybe just ensure interface compliance
         else:
-            assert_config(lexer, ('basic', 'contextual', 'dynamic', 'dynamic_complete'))
+            assert_config(lexer, ('basic', 'contextual', 'dynamic', 'dynamic_complete', 'template'))
             if self.options.postlex is not None and 'dynamic' in lexer:
                 raise ConfigurationError("Can't use postlex with a dynamic lexer. Use basic or contextual instead")
 

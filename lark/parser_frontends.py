@@ -1,15 +1,23 @@
 from typing import Any, Callable, Dict, Optional, Collection, Union, TYPE_CHECKING
 
-from .exceptions import ConfigurationError, GrammarError, assert_config
-from .utils import get_regexp_width, Serialize, TextOrSlice, TextSlice
-from .lexer import LexerThread, BasicLexer, ContextualLexer, Lexer
+from .exceptions import ConfigurationError, GrammarError, UnexpectedInput, UnexpectedToken, assert_config
+from .utils import get_regexp_width, Serialize, TextOrSlice, TextSlice, logger
+from .lexer import LexerThread, BasicLexer, ContextualLexer, Lexer, PatternPlaceholder, Token
 from .parsers import earley, xearley, cyk
 from .parsers.lalr_parser import LALR_Parser
 from .tree import Tree
 from .common import LexerConf, ParserConf, _ParserArgType, _LexerArgType
+from .grammar import augment_grammar_for_template_mode
+from .template_mode import TemplateContext, tokenize_template, splice_inserted_trees
 
 if TYPE_CHECKING:
     from .parsers.lalr_analysis import ParseTableBase
+
+
+try:  # pragma: no cover - runtime availability depends on Python version
+    from string.templatelib import Template as _PythonTemplate
+except Exception:  # pragma: no cover - fallback for older versions
+    _PythonTemplate = None
 
 
 ###{standalone
@@ -137,9 +145,9 @@ def _validate_frontend_args(parser, lexer) -> None:
     if not isinstance(lexer, type):     # not custom lexer?
         expected = {
             'lalr': ('basic', 'contextual'),
-            'earley': ('basic', 'dynamic', 'dynamic_complete'),
+            'earley': ('basic', 'dynamic', 'dynamic_complete', 'template'),
             'cyk': ('basic', ),
-         }[parser]
+        }[parser]
         assert_config(lexer, expected, 'Parser %r does not support lexer %%r, expected one of %%s' % parser)
 
 
@@ -273,4 +281,189 @@ def _construct_parsing_frontend(
     assert isinstance(parser_conf, ParserConf)
     parser_conf.parser_type = parser_type
     lexer_conf.lexer_type = lexer_type
+    if parser_type == 'earley' and lexer_type == 'template':
+        return TemplateEarleyFrontend(lexer_conf, parser_conf, options)
     return ParsingFrontend(lexer_conf, parser_conf, options)
+
+
+class _TemplateLexer:
+    def __init__(self, tokens):
+        self._tokens = list(tokens)
+        self._consumed = False
+
+    def lex(self, _expects):
+        if self._consumed:
+            return iter(())
+        self._consumed = True
+        return iter(self._tokens)
+
+
+class TemplateEarleyFrontend:
+    """Frontend for parsing Python template literals with the Earley parser."""
+
+    def __init__(self, lexer_conf: LexerConf, parser_conf: ParserConf, options) -> None:
+        self.lexer_conf = lexer_conf
+        self.parser_conf = parser_conf
+        self.options = options
+
+        self.tree_terminal_map, new_rules = augment_grammar_for_template_mode(parser_conf, lexer_conf)
+
+        def _collapse(children):
+            return children[0]
+
+        for rule in new_rules:
+            parser_conf.callbacks[rule] = _collapse
+
+        self.pyobj_types = dict(getattr(options, 'pyobj_types', {}) or {})
+        self._pyobj_expected_types = {
+            name: term.pattern.expected_type
+            for name, term in lexer_conf.terminals_by_name.items()
+            if isinstance(term.pattern, PatternPlaceholder)
+        }
+
+        if 'PYOBJ' not in self._pyobj_expected_types:
+            logger.warning("Template mode without %import template (PYOBJ): only Tree splicing is enabled")
+
+        resolve_ambiguity = options.ambiguity == 'resolve'
+        debug = options.debug if options else False
+        tree_class = options.tree_class or Tree if options.ambiguity != 'forest' else None
+
+        self.parser = earley.Parser(
+            lexer_conf,
+            parser_conf,
+            self._create_term_matcher(),
+            resolve_ambiguity=resolve_ambiguity,
+            debug=debug,
+            tree_class=tree_class,
+            ordered_sets=getattr(options, 'ordered_sets', True)
+        )
+
+    def _verify_start(self, start=None):
+        if start is None:
+            start_decls = self.parser_conf.start
+            if len(start_decls) > 1:
+                raise ConfigurationError("Lark initialized with more than 1 possible start rule. Must specify which start rule to parse", start_decls)
+            start, = start_decls
+        elif start not in self.parser_conf.start:
+            raise ConfigurationError("Unknown start rule %s. Must be one of %r" % (start, self.parser_conf.start))
+        return start
+
+    def parse(self, text: Optional[TextOrSlice], start=None, on_error=None):
+        if on_error is not None:
+            raise ConfigurationError("Template mode does not support on_error handlers")
+
+        chosen_start = self._verify_start(start)
+
+        if self._is_template(text):
+            tokens = list(self._tokenize_template(text))
+            lexer = _TemplateLexer(tokens)
+        else:
+            lexer = self._lex_string(text)
+
+        try:
+            tree = self.parser.parse(lexer, chosen_start)
+        except UnexpectedInput as exc:
+            self._enhance_error(exc, text)
+            raise
+
+        if isinstance(tree, Tree):
+            splice_inserted_trees(tree)
+            return tree
+
+        if (isinstance(tree, Token) and tree.type.startswith('TREE__')
+                and isinstance(tree.value, Tree)):
+            splice_inserted_trees(tree.value)
+            return tree.value
+
+        return tree
+
+    def parse_interactive(self, *args, **kwargs):
+        raise ConfigurationError("Template mode does not support interactive parsing")
+
+    def _is_template(self, value) -> bool:
+        if _PythonTemplate is not None and isinstance(value, _PythonTemplate):
+            return True
+        return hasattr(value, 'strings') and hasattr(value, 'interpolations')
+
+    def _tokenize_template(self, template):
+        source_info = getattr(template, 'source_info', None)
+        ctx = TemplateContext(
+            lexer_conf=self.lexer_conf,
+            tree_terminal_map=self.tree_terminal_map,
+            pyobj_types=self.pyobj_types,
+            source_info=source_info,
+        )
+        return tokenize_template(template, ctx)
+
+    def _lex_string(self, text):
+        if text is None:
+            raise TypeError("Template parser requires input text")
+        basic = BasicLexer(self.lexer_conf)
+        slice_text = TextSlice.cast_from(text)
+        return LexerThread.from_text(basic, slice_text)
+
+    def _create_term_matcher(self):
+        def match(term, token):
+            name = term.name
+            if name.startswith('PYOBJ'):
+                return self._match_pyobj(name, token)
+            if name.startswith('TREE__'):
+                return token.type == name
+            return name == token.type
+
+        return match
+
+    def _match_pyobj(self, term_name: str, token) -> bool:
+        token_type = getattr(token, 'type', '')
+        if not token_type.startswith('PYOBJ'):
+            return False
+
+        if term_name == 'PYOBJ':
+            return True
+
+        expected_name = self._pyobj_expected_types.get(term_name)
+        if expected_name is None:
+            return token_type == term_name
+
+        expected_type = self.pyobj_types.get(expected_name)
+        if expected_type is None:
+            raise TypeError(f"No Python type registered for PYOBJ[{expected_name}]")
+
+        if isinstance(token.value, expected_type):
+            return True
+
+        position = self._format_position(token)
+        expected_repr = self._format_type(expected_type)
+        raise TypeError(
+            f"Expected {expected_repr} for PYOBJ[{expected_name}] at {position}, got {type(token.value).__name__}")
+
+    def _format_type(self, typ) -> str:
+        if isinstance(typ, tuple):
+            return ' or '.join(self._format_type(t) for t in typ)
+        return getattr(typ, '__name__', repr(typ))
+
+    @staticmethod
+    def _format_position(token) -> str:
+        if getattr(token, 'line', None) is None or getattr(token, 'column', None) is None:
+            return '<unknown>'
+        return f"{token.line}:{token.column}"
+
+    def _enhance_error(self, exc: UnexpectedInput, input_data) -> None:
+        token = getattr(exc, 'token', None)
+        if not token:
+            return
+
+        token_type = token.type
+        position = self._format_position(token)
+
+        if token_type.startswith('PYOBJ'):
+            message = f"Interpolated Python object at {position} not allowed here"
+        elif token_type.startswith('TREE__'):
+            label = token_type[len('TREE__'):].lower()
+            message = f"Interpolated Tree('{label}') at {position} not valid in this context"
+        else:
+            return
+
+        if exc.args:
+            message += f". Original: {exc.args[0]}"
+        exc.args = (message,)

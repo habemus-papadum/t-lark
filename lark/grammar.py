@@ -134,3 +134,40 @@ class Rule(Serialize):
 
 
 ###}
+
+
+def augment_grammar_for_template_mode(parser_conf, lexer_conf):
+    """Augment grammar with tree splicing terminals and rules for template mode."""
+
+    from .lexer import TerminalDef, PatternTree
+
+    labels_per_nonterminal = {}
+    order_counters = {}
+    for rule in parser_conf.rules:
+        origin = rule.origin
+        label = rule.alias if rule.alias else origin.name
+        labels_per_nonterminal.setdefault(origin, set()).add(label)
+        order_counters[origin] = max(order_counters.get(origin, -1), rule.order)
+
+    tree_terminal_map = {}
+
+    for labels in labels_per_nonterminal.values():
+        for label in labels:
+            term_name = f"TREE__{label.upper()}"
+            if term_name not in lexer_conf.terminals_by_name:
+                term_def = TerminalDef(term_name, PatternTree(label))
+                lexer_conf.terminals.append(term_def)
+                lexer_conf.terminals_by_name[term_name] = term_def
+            tree_terminal_map[label] = term_name
+
+    new_rules = []
+    for origin, labels in labels_per_nonterminal.items():
+        for label in labels:
+            term_name = tree_terminal_map[label]
+            order_counters[origin] = order_counters.get(origin, -1) + 1
+            new_rule = Rule(origin, [Terminal(term_name)], order_counters[origin], None, RuleOptions(expand1=True))
+            new_rules.append(new_rule)
+
+    parser_conf.rules.extend(new_rules)
+
+    return tree_terminal_map, new_rules

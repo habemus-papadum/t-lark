@@ -72,6 +72,7 @@ class LarkOptions(Serialize):
     edit_terminals: Optional[Callable[[TerminalDef], TerminalDef]]
     import_paths: 'List[Union[str, Callable[[Union[None, str, PackageResource], str], Tuple[str, str]]]]'
     source_path: Optional[str]
+    pyobj_types: Optional[Dict[str, Any]]
 
     OPTIONS_DOC = r"""
     **===  General Options  ===**
@@ -142,6 +143,9 @@ class LarkOptions(Serialize):
             How priorities should be evaluated - "auto", ``None``, "normal", "invert" (Default: "auto")
     lexer_callbacks
             Dictionary of callbacks for the lexer. May alter tokens during lexing. Use with caution.
+    pyobj_types
+            Mapping from template placeholder type names (e.g. ``'image'``) to the Python types that should be accepted.
+            Used when operating in template lexer mode.
     use_bytes
             Accept an input of type ``bytes`` instead of ``str``.
     ordered_sets
@@ -188,6 +192,7 @@ class LarkOptions(Serialize):
         'ordered_sets': True,
         'import_paths': [],
         'source_path': None,
+        'pyobj_types': None,
         '_plugins': {},
     }
 
@@ -275,8 +280,16 @@ class Lark(Serialize):
 
     __serialize_fields__ = ['parser', 'rules', 'options']
 
-    def __init__(self, grammar: 'Union[Grammar, str, IO[str]]', **options) -> None:
+    def __init__(self, grammar: 'Union[Grammar, str, IO[str]]', *, pyobj_types: Optional[Dict[str, Any]] = None, **options) -> None:
+        if 'pyobj_types' in options:
+            if pyobj_types is not None:
+                raise ConfigurationError("pyobj_types specified twice")
+            pyobj_types = options.pop('pyobj_types')
+        if pyobj_types is not None:
+            options['pyobj_types'] = pyobj_types
+
         self.options = LarkOptions(options)
+        self.options.pyobj_types = dict(self.options.pyobj_types or {})
         re_module: types.ModuleType
 
         # Update which fields are serialized
@@ -395,7 +408,7 @@ class Lark(Serialize):
         if isinstance(lexer, type):
             assert issubclass(lexer, Lexer)     # XXX Is this really important? Maybe just ensure interface compliance
         else:
-            assert_config(lexer, ('basic', 'contextual', 'dynamic', 'dynamic_complete'))
+            assert_config(lexer, ('basic', 'contextual', 'dynamic', 'dynamic_complete', 'template'))
             if self.options.postlex is not None and 'dynamic' in lexer:
                 raise ConfigurationError("Can't use postlex with a dynamic lexer. Use basic or contextual instead")
 
@@ -554,6 +567,7 @@ class Lark(Serialize):
                              .format(set(kwargs) - _LOAD_ALLOWED_OPTIONS))
         options.update(kwargs)
         self.options = LarkOptions.deserialize(options, memo)
+        self.options.pyobj_types = dict(self.options.pyobj_types or {})
         self.rules = [Rule.deserialize(r, memo) for r in data['rules']]
         self.source_path = '<deserialized>'
         _validate_frontend_args(self.options.parser, self.options.lexer)

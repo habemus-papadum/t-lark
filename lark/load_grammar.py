@@ -12,7 +12,7 @@ from contextlib import suppress
 from typing import List, Tuple, Union, Callable, Dict, Optional, Sequence, Generator
 
 from .utils import bfs, logger, classify_bool, is_id_continue, is_id_start, bfs_all_unique, small_factors, OrderedSet, Serialize
-from .lexer import Token, TerminalDef, PatternStr, PatternRE, Pattern
+from .lexer import Token, TerminalDef, PatternStr, PatternRE, Pattern, PatternPlaceholder
 
 from .parse_tree_builder import ParseTreeBuilder
 from .parser_frontends import ParsingFrontend
@@ -90,6 +90,7 @@ TERMINALS = {
     'RULE_MODIFIERS': '(!|![?]?|[?]!?)(?=[_a-z])',
     'RULE': '_?[a-z][_a-z0-9]*',
     'TERMINAL': '_?[A-Z][_A-Z0-9]*',
+    'PYOBJ_TYPED': r'PYOBJ\[[A-Za-z_][A-Za-z0-9_]*\]',
     'STRING': r'"(\\"|\\\\|[^"\n])*?"i?',
     'REGEXP': r'/(?!/)(\\/|\\\\|[^/])*?/[%s]*' % _RE_FLAGS,
     '_NL': r'(\r?\n)+\s*',
@@ -146,7 +147,7 @@ RULES = {
               'range',
               'template_usage'],
 
-    'terminal': ['TERMINAL'],
+    'terminal': ['TERMINAL', 'PYOBJ_TYPED'],
     'nonterminal': ['RULE'],
 
     '?name': ['RULE', 'TERMINAL'],
@@ -686,6 +687,8 @@ class Grammar(Serialize):
         self.term_defs = term_defs
         self.rule_defs = rule_defs
         self.ignore = ignore
+        self.template_terminals: Dict[str, TerminalDef] = {}
+        self.uses_pyobj_placeholders = False
 
     __serialize_fields__ = 'term_defs', 'rule_defs', 'ignore'
 
@@ -711,6 +714,11 @@ class Grammar(Serialize):
         transformer = PrepareLiterals() * TerminalTreeToPattern()
         terminals = [TerminalDef(name, transformer.transform(term_tree), priority)
                      for name, (term_tree, priority) in term_defs if term_tree]
+
+        if self.template_terminals:
+            combined = {terminal.name: terminal for terminal in terminals}
+            combined.update(self.template_terminals)
+            terminals = list(combined.values())
 
         # =================
         #  Compile Rules
@@ -1099,6 +1107,8 @@ class GrammarBuilder:
 
         self._definitions: Dict[str, Definition] = {}
         self._ignore_names: List[str] = []
+        self.uses_pyobj_placeholders: bool = False
+        self._template_terminals: Dict[str, TerminalDef] = {}
 
     def _grammar_error(self, is_term, msg, *names):
         args = {}
@@ -1178,6 +1188,86 @@ class GrammarBuilder:
             self._ignore_names.append(name)
             self._definitions[name] = Definition(True, t, options=TOKEN_DEFAULT_PRIORITY)
 
+    def _handle_template_import(self, aliases: Dict[str, str]) -> None:
+        if len(aliases) != 1 or 'PYOBJ' not in aliases or aliases['PYOBJ'] != 'PYOBJ':
+            raise GrammarError("%import template only supports: %import template (PYOBJ)")
+
+        if not self.uses_pyobj_placeholders:
+            self.uses_pyobj_placeholders = True
+        self._register_template_terminal('PYOBJ', None)
+
+    def _register_template_terminal(self, name: str, expected_type: Optional[str]) -> None:
+        existing = self._template_terminals.get(name)
+        if existing is not None:
+            pattern = existing.pattern
+            assert isinstance(pattern, PatternPlaceholder)
+            if pattern.expected_type != expected_type:
+                raise GrammarError(f"Conflicting PYOBJ placeholder definitions for {name}")
+            return
+
+        self._template_terminals[name] = TerminalDef(name, PatternPlaceholder(expected_type))
+        if name not in self._definitions:
+            self._definitions[name] = Definition(True, None, options=TOKEN_DEFAULT_PRIORITY)
+
+    @staticmethod
+    def _is_template_placeholder_name(name: str) -> bool:
+        return name == 'PYOBJ' or name.startswith('PYOBJ__')
+
+    def _convert_template_symbol(self, symbol: Terminal) -> Terminal:
+        name = symbol.name
+        idx = name.find('PYOBJ')
+        if idx == -1:
+            return symbol
+
+        suffix = name[idx:]
+
+        if suffix == 'PYOBJ':
+            if not self.uses_pyobj_placeholders:
+                raise GrammarError("PYOBJ requires: %import template (PYOBJ)")
+            self._register_template_terminal('PYOBJ', None)
+            return Terminal('PYOBJ', symbol.filter_out)
+
+        if suffix.startswith('PYOBJ[') and suffix.endswith(']'):
+            if not self.uses_pyobj_placeholders:
+                raise GrammarError("PYOBJ requires: %import template (PYOBJ)")
+            type_name = suffix[6:-1]
+            if not type_name:
+                raise GrammarError("PYOBJ requires a type name inside brackets")
+
+            internal_name = f"PYOBJ__{type_name.upper()}"
+            self._register_template_terminal(internal_name, type_name)
+            return Terminal(internal_name, symbol.filter_out)
+
+        if suffix.startswith('PYOBJ__'):
+            internal_name = suffix
+            existing = self._template_terminals.get(internal_name)
+            expected_type = None
+            if existing is not None:
+                pattern = existing.pattern
+                if isinstance(pattern, PatternPlaceholder):
+                    expected_type = pattern.expected_type
+            else:
+                expected_type = internal_name[len('PYOBJ__'):]
+            self._register_template_terminal(internal_name, expected_type)
+            return Terminal(internal_name, symbol.filter_out)
+
+        return symbol
+
+    def _process_template_symbols(self, tree: Optional[Tree]) -> Optional[Tree]:
+        if tree is None:
+            return None
+
+        def _visit(node: Tree) -> None:
+            for index, child in enumerate(node.children):
+                if isinstance(child, Tree):
+                    _visit(child)
+                elif isinstance(child, Terminal):
+                    node.children[index] = self._convert_template_symbol(child)
+
+        if isinstance(tree, Tree):
+            _visit(tree)
+        return tree
+
     def _unpack_import(self, stmt, grammar_name):
         if len(stmt.children) > 1:
             path_node, arg1 = stmt.children
@@ -1234,6 +1324,7 @@ class GrammarBuilder:
             name = mangle(name)
 
         exp = _mangle_definition_tree(exp, mangle)
+        exp = self._process_template_symbols(exp)
         return name, is_term, exp, params, opts
 
 
@@ -1245,6 +1336,13 @@ class GrammarBuilder:
         for stmt in tree.children:
             if stmt.data == 'import':
                 dotted_path, base_path, aliases = self._unpack_import(stmt, grammar_name)
+                dotted_path = tuple(str(part) for part in dotted_path)
+                aliases = {str(k): str(v) for k, v in aliases.items()}
+
+                if dotted_path == ('template',):
+                    self._handle_template_import(aliases)
+                    continue
+
                 try:
                     import_base_path, import_aliases = imports[dotted_path]
                     assert base_path == import_base_path, 'Inconsistent base_path for %s.' % '.'.join(dotted_path)
@@ -1328,11 +1426,24 @@ class GrammarBuilder:
                 gb = GrammarBuilder(self.global_keep_all_tokens, self.import_paths, self.used_files)
                 gb.load_grammar(text, joined_path, mangle)
                 gb._remove_unused(map(mangle, aliases))
-                for name in gb._definitions:
+
+                if gb.uses_pyobj_placeholders:
+                    self.uses_pyobj_placeholders = True
+
+                for term_name, term_def in gb._template_terminals.items():
+                    pattern = term_def.pattern
+                    expected_type = pattern.expected_type if isinstance(pattern, PatternPlaceholder) else None
+                    self._register_template_terminal(term_name, expected_type)
+
+                merged_defs = {}
+                for name, definition in gb._definitions.items():
+                    if self._is_template_placeholder_name(name):
+                        continue
                     if name in self._definitions:
                         raise GrammarError("Cannot import '%s' from '%s': Symbol already defined." % (name, grammar_path))
+                    merged_defs[name] = definition
 
-                self._definitions.update(**gb._definitions)
+                self._definitions.update(merged_defs)
                 break
         else:
             # Search failed. Make Python throw a nice error.
@@ -1384,7 +1495,10 @@ class GrammarBuilder:
             else:
                 rule_defs.append((name, params, exp, options))
         # resolve_term_references(term_defs)
-        return Grammar(rule_defs, term_defs, self._ignore_names)
+        grammar = Grammar(rule_defs, term_defs, self._ignore_names)
+        grammar.template_terminals = dict(self._template_terminals)
+        grammar.uses_pyobj_placeholders = self.uses_pyobj_placeholders
+        return grammar
 
 
 def verify_used_files(file_hashes):

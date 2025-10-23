@@ -1,7 +1,7 @@
 from copy import deepcopy
 import sys
 from types import ModuleType
-from typing import Callable, Collection, Dict, Optional, TYPE_CHECKING, List
+from typing import Any, Callable, Collection, Dict, Optional, TYPE_CHECKING, List, Union
 
 if TYPE_CHECKING:
     from .lark import PostLex
@@ -22,7 +22,7 @@ from .lexer import TerminalDef, Token
 _ParserArgType: 'TypeAlias' = 'Literal["earley", "lalr", "cyk", "auto"]'
 _LexerArgType: 'TypeAlias' = 'Union[Literal["auto", "basic", "contextual", "dynamic", "dynamic_complete"], Type[Lexer]]'
 _LexerCallback = Callable[[Token], Token]
-ParserCallbacks = Dict[str, Callable]
+ParserCallbacks = Dict[Union[str, 'Rule'], Callable[..., Any]]
 
 class LexerConf(Serialize):
     __serialize_fields__ = 'terminals', 'ignore', 'g_regex_flags', 'use_bytes', 'lexer_type'
@@ -82,5 +82,6 @@ class ParserConf(Serialize):
         self.rules = rules
         self.callbacks = callbacks
         self.start = start
+        self.template_tree_terminals: Optional[Dict[str, str]] = None
 
 ###}

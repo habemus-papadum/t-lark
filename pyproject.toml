@@ -88,6 +88,14 @@ exclude = [
 module = [ "js2py" ]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = [
+    "re._parser",
+    "re._constants",
+    "string.templatelib",
+]
+ignore_missing_imports = true
+
 [tool.coverage.report]
 exclude_lines = [
     "pragma: no cover",

@@ -119,7 +119,7 @@ def _segment_text_slice(static_str: str, index: int, ctx: TemplateContext) -> Te
 def _build_interpolation_token(value, ctx: TemplateContext, index: int) -> Token:
     info = ctx.source_info
     if info is None:
-        meta = {
+        meta: Dict[str, Optional[int]] = {
             "start_pos": None,
             "end_pos": None,
             "line": None,
@@ -195,7 +195,7 @@ def _inheritance_distance(expected: type, actual: type) -> int:
         return len(actual.mro())
 
 
-def _offset_to_meta(text: str, start: int, end: int) -> Dict[str, int]:
+def _offset_to_meta(text: str, start: int, end: int) -> Dict[str, Optional[int]]:
     line = text.count("\n", 0, start) + 1
     line_start = text.rfind("\n", 0, start) + 1
     column = start - line_start + 1

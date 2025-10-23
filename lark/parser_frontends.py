@@ -2,7 +2,7 @@ from typing import Any, Callable, Dict, Optional, Collection, Union, TYPE_CHECKI
 
 from .exceptions import ConfigurationError, GrammarError, assert_config
 from .utils import get_regexp_width, Serialize, TextOrSlice, TextSlice
-from .lexer import LexerThread, BasicLexer, ContextualLexer, Lexer
+from .lexer import LexerThread, BasicLexer, ContextualLexer, Lexer, Token
 from .parsers import earley, xearley, cyk
 from .parsers.lalr_parser import LALR_Parser
 from .tree import Tree
@@ -137,7 +137,7 @@ def _validate_frontend_args(parser, lexer) -> None:
     if not isinstance(lexer, type):     # not custom lexer?
         expected = {
             'lalr': ('basic', 'contextual'),
-            'earley': ('basic', 'dynamic', 'dynamic_complete'),
+            'earley': ('basic', 'dynamic', 'dynamic_complete', 'template'),
             'cyk': ('basic', ),
          }[parser]
         assert_config(lexer, expected, 'Parser %r does not support lexer %%r, expected one of %%s' % parser)
@@ -273,4 +273,225 @@ def _construct_parsing_frontend(
     assert isinstance(parser_conf, ParserConf)
     parser_conf.parser_type = parser_type
     lexer_conf.lexer_type = lexer_type
+
+    # Check for template mode
+    if lexer_type == "template":
+        if parser_type != "earley":
+            from .exceptions import ConfigurationError
+            raise ConfigurationError(
+                "Template lexer requires parser='earley', got %r" % parser_type)
+        return TemplateEarleyFrontend(lexer_conf, parser_conf, options)
+
     return ParsingFrontend(lexer_conf, parser_conf, options)
+
+
+class _TemplateLexerWrapper:
+    """Wrapper to provide lexer interface for pre-generated token stream."""
+
+    def __init__(self, tokens):
+        self.tokens = list(tokens)  # Convert generator to list
+        self._index = 0
+
+    def lex(self, expects=None):
+        """Yield tokens one at a time (ignores expects)."""
+        for token in self.tokens:
+            yield token
+
+
+class TemplateEarleyFrontend:
+    """Frontend for parsing Python 3.14 Template objects with Earley."""
+
+    def __init__(self, lexer_conf: LexerConf, parser_conf: ParserConf, options):
+        self.lexer_conf = lexer_conf
+        # Skip validation for template mode (PYOBJ/TREE__ have zero width)
+        self.lexer_conf.skip_validation = True
+        self.parser_conf = parser_conf
+        self.options = options
+
+        # Get type mappings
+        self.pyobj_types = getattr(options, 'pyobj_types', {}) if options else {}
+
+        # Build label map for quick lookup
+        self.labels_per_nonterminal = self._compute_labels()
+
+        # Create custom term matcher
+        term_matcher = self._create_term_matcher()
+
+        # Create Earley parser
+        from .parsers.earley import Parser as EarleyParser
+        resolve_ambiguity = options and options.ambiguity == 'resolve'
+        debug = options and options.debug
+        tree_class = options.tree_class if (options and options.ambiguity != 'forest') else None
+
+        self.parser = EarleyParser(
+            lexer_conf, parser_conf, term_matcher,
+            resolve_ambiguity=resolve_ambiguity,
+            debug=debug,
+            tree_class=tree_class
+        )
+
+    def _compute_labels(self):
+        """Compute which labels each nonterminal can produce."""
+        labels = {}
+        for rule in self.parser_conf.rules:
+            if rule.origin not in labels:
+                labels[rule.origin] = set()
+            label = rule.alias if rule.alias else rule.origin.name
+            labels[rule.origin].add(label)
+        return labels
+
+    def _create_term_matcher(self):
+        """Create custom term matcher for PYOBJ and TREE__ terminals."""
+
+        def term_match(term, token):
+            if not isinstance(token, Token):
+                return False
+
+            term_name = term.name
+
+            # Handle PYOBJ (untyped)
+            if term_name == "PYOBJ":
+                return token.type == "PYOBJ"
+
+            # Handle PYOBJ__TYPENAME (typed)
+            if term_name.startswith("PYOBJ__"):
+                if token.type != term_name:
+                    return False
+
+                # Extract type name from terminal
+                type_name = term_name[7:].lower()  # Strip "PYOBJ__" and lowercase
+
+                # Validate type if mapping provided
+                if type_name in self.pyobj_types:
+                    expected_type = self.pyobj_types[type_name]
+                    if not isinstance(token.value, expected_type):
+                        raise TypeError(
+                            f"Expected {expected_type.__name__} for "
+                            f"PYOBJ[{type_name}], got "
+                            f"{type(token.value).__name__}")
+                return True
+
+            # Handle TREE__LABEL
+            if term_name.startswith("TREE__"):
+                if token.type != term_name:
+                    return False
+                if not isinstance(token.value, Tree):
+                    return False
+                expected_label = term_name[6:].lower()  # Strip "TREE__"
+                return token.value.data == expected_label
+
+            # Normal terminals
+            return token.type == term_name
+
+        return term_match
+
+    def _verify_start(self, start=None):
+        """Verify start rule is valid."""
+        if start is None:
+            start_decls = self.parser_conf.start
+            if len(start_decls) > 1:
+                from .exceptions import ConfigurationError
+                raise ConfigurationError(
+                    "Lark initialized with more than 1 possible start rule. "
+                    "Must specify which start rule to parse", start_decls)
+            start ,= start_decls
+        elif start not in self.parser_conf.start:
+            from .exceptions import ConfigurationError
+            raise ConfigurationError(
+                f"Unknown start rule {start}. "
+                f"Must be one of {self.parser_conf.start}")
+        return start
+
+    def parse(self, input_data, start=None, on_error=None):
+        """Parse a Template or plain string."""
+        chosen_start = self._verify_start(start)
+        kw = {} if on_error is None else {'on_error': on_error}
+
+        # Route to appropriate tokenization
+        try:
+            from string.templatelib import Template
+            is_template = isinstance(input_data, Template)
+        except ImportError:
+            is_template = False
+
+        if is_template:
+            tokens = self._tokenize_template(input_data)
+            lexer = _TemplateLexerWrapper(tokens)
+        else:
+            # Plain string: use basic lexer which already has lex() method
+            tokens = self._lex_string(input_data)
+            lexer = _TemplateLexerWrapper(tokens)
+
+        # Parse
+        try:
+            tree = self.parser.parse(lexer, chosen_start, **kw)
+        except Exception as e:
+            self._enhance_error(e, input_data)
+            raise
+
+        # Post-process: splice trees
+        if tree:
+            from .template_mode import splice_inserted_trees
+            splice_inserted_trees(tree)
+
+        return tree
+
+    def _tokenize_template(self, template):
+        """Tokenize a Template object."""
+        from .template_mode import tokenize_template, TemplateContext
+
+        ctx = TemplateContext(
+            lexer_conf=self.lexer_conf,
+            tree_terminal_map={label: f"TREE__{label.upper()}"
+                              for label in self._all_labels()},
+            source_info=getattr(template, 'source_info', None)
+        )
+
+        return tokenize_template(template, ctx)
+
+    def _lex_string(self, text):
+        """Lex a plain string."""
+        from .lexer import BasicLexer, LexerState
+        from .utils import TextSlice
+        lexer = BasicLexer(self.lexer_conf)
+        text_slice = TextSlice.cast_from(text)
+        lex_state = LexerState(text_slice)
+        return lexer.lex(lex_state, None)
+
+    def _all_labels(self):
+        """Get all labels from grammar."""
+        labels = set()
+        for label_set in self.labels_per_nonterminal.values():
+            labels.update(label_set)
+        return labels
+
+    def _enhance_error(self, exc, input_data):
+        """Add template-specific context to errors."""
+        try:
+            from string.templatelib import Template
+            is_template = isinstance(input_data, Template)
+        except ImportError:
+            is_template = False
+
+        if not is_template:
+            return
+
+        if not hasattr(exc, 'token') or not exc.token:
+            return
+
+        token_type = exc.token.type
+
+        if token_type == "PYOBJ" or token_type.startswith("PYOBJ__"):
+            if hasattr(exc, 'args') and exc.args:
+                exc.args = (
+                    f"Interpolated Python object not allowed here "
+                    f"(no PYOBJ placeholder in this context). "
+                    f"Original: {exc.args[0] if exc.args else ''}",
+                )
+        elif token_type.startswith("TREE__"):
+            label = token_type[6:].lower()
+            if hasattr(exc, 'args') and exc.args:
+                exc.args = (
+                    f"Interpolated Tree('{label}') not valid in this context. "
+                    f"Original: {exc.args[0] if exc.args else ''}",
+                )

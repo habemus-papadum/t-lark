@@ -1099,6 +1099,7 @@ class GrammarBuilder:
 
         self._definitions: Dict[str, Definition] = {}
         self._ignore_names: List[str] = []
+        self.uses_pyobj_placeholders = False
 
     def _grammar_error(self, is_term, msg, *names):
         args = {}
@@ -1178,6 +1179,23 @@ class GrammarBuilder:
             self._ignore_names.append(name)
             self._definitions[name] = Definition(True, t, options=TOKEN_DEFAULT_PRIORITY)
 
+    def _create_pyobj_terminal(self):
+        """Create the PYOBJ terminal definition for template mode."""
+        from .lexer import PatternPlaceholder
+        from .grammar import Terminal
+
+        # Mark grammar as using template mode
+        self.uses_pyobj_placeholders = True
+
+        # Create untyped PYOBJ terminal with proper tree structure
+        # Structure: expansions -> expansion -> value -> pattern
+        pyobj_pattern = PatternPlaceholder()
+        pattern_tree = Tree('pattern', [pyobj_pattern])
+        value_tree = Tree('value', [pattern_tree])
+        expansion_tree = Tree('expansion', [value_tree])
+        expansions_tree = Tree('expansions', [expansion_tree])
+        self._definitions['PYOBJ'] = Definition(True, expansions_tree, options=TOKEN_DEFAULT_PRIORITY)
+
     def _unpack_import(self, stmt, grammar_name):
         if len(stmt.children) > 1:
             path_node, arg1 = stmt.children
@@ -1196,6 +1214,17 @@ class GrammarBuilder:
                 raise GrammarError("Nothing was imported from grammar `%s`" % name)
             name = path_node.children[-1]  # Get name from dotted path
             aliases = {name.value: (arg1 or name).value}  # Aliases if exist
+
+        # Check for special template import
+        if len(dotted_path) == 1 and dotted_path[0].value == "template":
+            if isinstance(arg1, Tree) and len(arg1.children) == 1:
+                imported_name = arg1.children[0].value
+                if imported_name == "PYOBJ":
+                    # Create PYOBJ terminal
+                    self._create_pyobj_terminal()
+                    # Return empty to skip normal import processing
+                    return None, None, {}
+            raise GrammarError("%import template only supports: %import template (PYOBJ)")
 
         if path_node.data == 'import_lib':  # Import from library
             base_path = None
@@ -1244,7 +1273,11 @@ class GrammarBuilder:
 
         for stmt in tree.children:
             if stmt.data == 'import':
-                dotted_path, base_path, aliases = self._unpack_import(stmt, grammar_name)
+                result = self._unpack_import(stmt, grammar_name)
+                # Skip if template import (returns None)
+                if result[0] is None:
+                    continue
+                dotted_path, base_path, aliases = result
                 try:
                     import_base_path, import_aliases = imports[dotted_path]
                     assert base_path == import_base_path, 'Inconsistent base_path for %s.' % '.'.join(dotted_path)
@@ -1374,6 +1407,11 @@ class GrammarBuilder:
 
     def build(self) -> Grammar:
         self.validate()
+
+        # Apply template mode augmentation if needed
+        if self.uses_pyobj_placeholders:
+            self._augment_for_template_mode()
+
         rule_defs = []
         term_defs = []
         for name, d in self._definitions.items():
@@ -1385,6 +1423,91 @@ class GrammarBuilder:
                 rule_defs.append((name, params, exp, options))
         # resolve_term_references(term_defs)
         return Grammar(rule_defs, term_defs, self._ignore_names)
+
+    def _augment_for_template_mode(self):
+        """Add tree injection rules for template mode.
+
+        For each nonterminal N and each label it can produce,
+        add: N: TREE__LABEL with expand1=True (inline single child)
+        """
+        from .lexer import PatternTree
+
+        # Step 1: Compute labels per nonterminal (from rules only, not terminals)
+        labels_per_nonterminal = {}
+
+        for name, d in self._definitions.items():
+            if d.is_term:
+                continue  # Skip terminals
+
+            if name not in labels_per_nonterminal:
+                labels_per_nonterminal[name] = set()
+
+            # Determine label: use explicit alias if present, else use rule name
+            # We need to parse the expansion tree to find aliases
+            if d.tree and hasattr(d.tree, 'data') and d.tree.data == 'expansions':
+                for expansion in d.tree.children:
+                    if hasattr(expansion, 'data') and expansion.data == 'expansion':
+                        # Check for alias in this expansion
+                        alias = None
+                        for child in expansion.children:
+                            if hasattr(child, 'data') and child.data == 'alias':
+                                alias = child.children[0].value if child.children else None
+                                break
+
+                        label = alias if alias else name
+                        labels_per_nonterminal[name].add(label)
+            else:
+                # No expansions tree, just use name
+                labels_per_nonterminal[name].add(name)
+
+        # Step 2: Collect all unique labels
+        all_labels = set()
+        for label_set in labels_per_nonterminal.values():
+            all_labels.update(label_set)
+
+        # Step 3: Create TREE__LABEL terminals with proper tree structure
+        # Structure: expansions -> expansion -> value -> pattern
+        for label in all_labels:
+            term_name = f"TREE__{label.upper()}"
+            tree_pattern = PatternTree(label)
+            pattern_tree = Tree('pattern', [tree_pattern])
+            value_tree = Tree('value', [pattern_tree])
+            expansion_tree = Tree('expansion', [value_tree])
+            expansions_tree = Tree('expansions', [expansion_tree])
+            self._definitions[term_name] = Definition(True, expansions_tree, options=TOKEN_DEFAULT_PRIORITY)
+
+        # Step 4: Add injection rules
+        for origin_name, labels in labels_per_nonterminal.items():
+            for label in labels:
+                term_name = f"TREE__{label.upper()}"
+
+                # Create expansion: just the terminal
+                expansion = Tree('expansion', [
+                    Tree('value', [Terminal(term_name)])
+                ])
+
+                # Create expansions tree with single expansion
+                exp_tree = Tree('expansions', [expansion])
+
+                # Create rule with expand1=True (inline single child)
+                options = RuleOptions(expand1=True)
+
+                # Add the injection rule
+                # Use a unique name to avoid conflicts
+                injection_rule_name = f"__{origin_name}_INJECT_{label.upper()}"
+                self._definitions[injection_rule_name] = Definition(False, exp_tree, options=options)
+
+                # Also need to add this as an alternative to the original rule
+                # Actually, we need to add the terminal to the original rule's expansions
+                original_def = self._definitions.get(origin_name)
+                if original_def and original_def.tree:
+                    # Add new expansion to existing expansions
+                    if hasattr(original_def.tree, 'data') and original_def.tree.data == 'expansions':
+                        # Create new expansion for tree injection
+                        new_expansion = Tree('expansion', [
+                            Tree('value', [Terminal(term_name)])
+                        ])
+                        original_def.tree.children.append(new_expansion)
 
 
 def verify_used_files(file_hashes):

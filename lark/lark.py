@@ -72,6 +72,7 @@ class LarkOptions(Serialize):
     edit_terminals: Optional[Callable[[TerminalDef], TerminalDef]]
     import_paths: 'List[Union[str, Callable[[Union[None, str, PackageResource], str], Tuple[str, str]]]]'
     source_path: Optional[str]
+    pyobj_types: Dict[str, type]
 
     OPTIONS_DOC = r"""
     **===  General Options  ===**
@@ -152,6 +153,10 @@ class LarkOptions(Serialize):
             A List of either paths or loader functions to specify from where grammars are imported
     source_path
             Override the source of from where the grammar was loaded. Useful for relative imports and unconventional grammar loading
+    pyobj_types
+            Dict mapping type names to Python types for PYOBJ[typename] in template mode.
+            Example: {'image': PIL.Image.Image, 'tensor': torch.Tensor}
+            Only used when lexer="template". (Default: {})
     **=== End of Options ===**
     """
     if __doc__:
@@ -188,6 +193,7 @@ class LarkOptions(Serialize):
         'ordered_sets': True,
         'import_paths': [],
         'source_path': None,
+        'pyobj_types': {},
         '_plugins': {},
     }
 
@@ -395,7 +401,7 @@ class Lark(Serialize):
         if isinstance(lexer, type):
             assert issubclass(lexer, Lexer)     # XXX Is this really important? Maybe just ensure interface compliance
         else:
-            assert_config(lexer, ('basic', 'contextual', 'dynamic', 'dynamic_complete'))
+            assert_config(lexer, ('basic', 'contextual', 'dynamic', 'dynamic_complete', 'template'))
             if self.options.postlex is not None and 'dynamic' in lexer:
                 raise ConfigurationError("Can't use postlex with a dynamic lexer. Use basic or contextual instead")
 

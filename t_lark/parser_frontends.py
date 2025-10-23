@@ -23,6 +23,9 @@ if TYPE_CHECKING:
 
 ###{standalone
 
+from functools import lru_cache
+from importlib import import_module
+
 def _wrap_lexer(lexer_class):
     future_interface = getattr(lexer_class, '__future_interface__', 0)
     if future_interface == 2:

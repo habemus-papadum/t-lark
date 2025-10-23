@@ -4,8 +4,7 @@
 Created outside of normal GH fork network to temporarily work around https://github.com/openai/codex/issues/4489
 
 ## Status:
-POC, published to pypi only simply my own testing, would not recommend use for
-any more than experiments.   Once I have had a chance to work out my thoughts, I will
+POC, published to pypi only to simplify my own testing in cloud environments; would not recommend to use for anything more than experiments.   Once I have had a chance to work out my thoughts, I will
 see if upstream has interest in a PR.
 
 # Motivation

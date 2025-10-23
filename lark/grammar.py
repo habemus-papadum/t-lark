@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Tuple, ClassVar, Sequence
+from typing import Any, Dict, Optional, Tuple, ClassVar, Sequence, Set, List
 
 from .utils import Serialize
 
@@ -134,3 +134,53 @@ class Rule(Serialize):
 
 
 ###}
+
+
+def augment_grammar_for_template_mode(parser_conf, lexer_conf) -> Dict[str, str]:
+    """Augment a grammar so it can accept spliced Trees when parsing templates."""
+
+    from .lexer import PatternTree, TerminalDef
+
+    rules: List[Rule] = parser_conf.rules
+    callbacks = parser_conf.callbacks
+
+    labels_per_nonterminal: Dict[NonTerminal, Set[str]] = {}
+    for rule in rules:
+        origin = rule.origin
+        label = rule.alias if rule.alias else origin.name
+        labels_per_nonterminal.setdefault(origin, set()).add(label)
+
+    tree_terminal_map: Dict[str, str] = {}
+    terminals_by_name = lexer_conf.terminals_by_name
+    terminals = list(lexer_conf.terminals)
+
+    for labels in labels_per_nonterminal.values():
+        for label in labels:
+            term_name = f'TREE__{label.upper()}'
+            if term_name not in terminals_by_name:
+                term_def = TerminalDef(term_name, PatternTree(label))
+                terminals.append(term_def)
+                terminals_by_name[term_name] = term_def
+            tree_terminal_map[label] = term_name
+
+    lexer_conf.terminals = terminals
+
+    def _return_child(children):
+        return children[0]
+
+    new_rules: List[Rule] = []
+    rule_increments: Dict[NonTerminal, int] = {}
+
+    for origin, labels in labels_per_nonterminal.items():
+        highest_order = max((r.order for r in rules if r.origin == origin), default=-1)
+        next_order = highest_order + 1
+        rule_increments[origin] = next_order
+        for label in labels:
+            term_symbol = Terminal(tree_terminal_map[label])
+            new_rule = Rule(origin, (term_symbol,), order=rule_increments[origin], alias=None, options=RuleOptions(expand1=True))
+            rule_increments[origin] += 1
+            new_rules.append(new_rule)
+            callbacks[new_rule] = _return_child
+
+    rules.extend(new_rules)
+    return tree_terminal_map

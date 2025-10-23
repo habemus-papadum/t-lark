@@ -71,6 +71,7 @@ class LarkOptions(Serialize):
     ordered_sets: bool
     edit_terminals: Optional[Callable[[TerminalDef], TerminalDef]]
     import_paths: 'List[Union[str, Callable[[Union[None, str, PackageResource], str], Tuple[str, str]]]]'
+    pyobj_types: Dict[str, Type[Any]]
     source_path: Optional[str]
 
     OPTIONS_DOC = r"""
@@ -150,6 +151,8 @@ class LarkOptions(Serialize):
             A callback for editing the terminals before parse.
     import_paths
             A List of either paths or loader functions to specify from where grammars are imported
+    pyobj_types
+            Mapping of template placeholder names to Python types used with PYOBJ[typename]
     source_path
             Override the source of from where the grammar was loaded. Useful for relative imports and unconventional grammar loading
     **=== End of Options ===**
@@ -187,6 +190,7 @@ class LarkOptions(Serialize):
         'use_bytes': False,
         'ordered_sets': True,
         'import_paths': [],
+        'pyobj_types': None,
         'source_path': None,
         '_plugins': {},
     }
@@ -277,6 +281,15 @@ class Lark(Serialize):
 
     def __init__(self, grammar: 'Union[Grammar, str, IO[str]]', **options) -> None:
         self.options = LarkOptions(options)
+        if self.options.pyobj_types is None:
+            self.options.pyobj_types = {}
+        else:
+            self.options.pyobj_types = dict(self.options.pyobj_types)
+        for key, value in self.options.pyobj_types.items():
+            if not isinstance(key, str):
+                raise ConfigurationError("pyobj_types keys must be strings")
+            if not isinstance(value, type):
+                raise ConfigurationError("pyobj_types values must be types")
         re_module: types.ModuleType
 
         # Update which fields are serialized
@@ -395,7 +408,7 @@ class Lark(Serialize):
         if isinstance(lexer, type):
             assert issubclass(lexer, Lexer)     # XXX Is this really important? Maybe just ensure interface compliance
         else:
-            assert_config(lexer, ('basic', 'contextual', 'dynamic', 'dynamic_complete'))
+            assert_config(lexer, ('basic', 'contextual', 'dynamic', 'dynamic_complete', 'template'))
             if self.options.postlex is not None and 'dynamic' in lexer:
                 raise ConfigurationError("Can't use postlex with a dynamic lexer. Use basic or contextual instead")
 

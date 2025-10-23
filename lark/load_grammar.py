@@ -12,7 +12,7 @@ from contextlib import suppress
 from typing import List, Tuple, Union, Callable, Dict, Optional, Sequence, Generator
 
 from .utils import bfs, logger, classify_bool, is_id_continue, is_id_start, bfs_all_unique, small_factors, OrderedSet, Serialize
-from .lexer import Token, TerminalDef, PatternStr, PatternRE, Pattern
+from .lexer import Token, TerminalDef, PatternStr, PatternRE, Pattern, PatternPlaceholder
 
 from .parse_tree_builder import ParseTreeBuilder
 from .parser_frontends import ParsingFrontend
@@ -681,13 +681,17 @@ class Grammar(Serialize):
     term_defs: List[Tuple[str, Tuple[Tree, int]]]
     rule_defs: List[Tuple[str, Tuple[str, ...], Tree, RuleOptions]]
     ignore: List[str]
+    template_term_defs: Dict[str, TerminalDef]
+    uses_pyobj_placeholders: bool
 
-    def __init__(self, rule_defs: List[Tuple[str, Tuple[str, ...], Tree, RuleOptions]], term_defs: List[Tuple[str, Tuple[Tree, int]]], ignore: List[str]) -> None:
+    def __init__(self, rule_defs: List[Tuple[str, Tuple[str, ...], Tree, RuleOptions]], term_defs: List[Tuple[str, Tuple[Tree, int]]], ignore: List[str], template_term_defs: Optional[Dict[str, TerminalDef]] = None, uses_pyobj_placeholders: bool = False) -> None:
         self.term_defs = term_defs
         self.rule_defs = rule_defs
         self.ignore = ignore
+        self.template_term_defs = template_term_defs or {}
+        self.uses_pyobj_placeholders = uses_pyobj_placeholders
 
-    __serialize_fields__ = 'term_defs', 'rule_defs', 'ignore'
+    __serialize_fields__ = 'term_defs', 'rule_defs', 'ignore', 'template_term_defs', 'uses_pyobj_placeholders'
 
     def compile(self, start, terminals_to_keep) -> Tuple[List[TerminalDef], List[Rule], List[str]]:
         # We change the trees in-place (to support huge grammars)
@@ -711,6 +715,14 @@ class Grammar(Serialize):
         transformer = PrepareLiterals() * TerminalTreeToPattern()
         terminals = [TerminalDef(name, transformer.transform(term_tree), priority)
                      for name, (term_tree, priority) in term_defs if term_tree]
+
+        template_terms = list(getattr(self, 'template_term_defs', {}).values())
+        if template_terms:
+            existing_names = {t.name for t in terminals}
+            for term in template_terms:
+                if term.name not in existing_names:
+                    terminals.append(term)
+                    existing_names.add(term.name)
 
         # =================
         #  Compile Rules
@@ -1099,6 +1111,8 @@ class GrammarBuilder:
 
         self._definitions: Dict[str, Definition] = {}
         self._ignore_names: List[str] = []
+        self.uses_pyobj_placeholders = False
+        self._template_term_defs: Dict[str, TerminalDef] = {}
 
     def _grammar_error(self, is_term, msg, *names):
         args = {}
@@ -1178,6 +1192,112 @@ class GrammarBuilder:
             self._ignore_names.append(name)
             self._definitions[name] = Definition(True, t, options=TOKEN_DEFAULT_PRIORITY)
 
+    def _maybe_handle_template_import(self, stmt: Tree) -> bool:
+        if not stmt.children:
+            return False
+
+        path_node = stmt.children[0]
+        if not isinstance(path_node, Tree) or path_node.data != 'import_lib' or not path_node.children:
+            return False
+
+        module_token = path_node.children[0]
+        if str(module_token) != 'template':
+            return False
+
+        if len(stmt.children) == 1:
+            raise GrammarError("%import template must specify names to import")
+
+        names_node = stmt.children[1]
+        if not isinstance(names_node, Tree) or names_node.data != 'name_list':
+            raise GrammarError("%import template only supports the syntax: %import template (PYOBJ)")
+
+        names = [str(n) for n in names_node.children]
+        if names != ['PYOBJ']:
+            raise GrammarError("%import template only supports importing PYOBJ")
+
+        self.uses_pyobj_placeholders = True
+        self._ensure_pyobj_terminal()
+        return True
+
+    def _ensure_pyobj_terminal(self) -> None:
+        if 'PYOBJ' not in self._template_term_defs:
+            self._template_term_defs['PYOBJ'] = TerminalDef('PYOBJ', PatternPlaceholder())
+        if 'PYOBJ' not in self._definitions:
+            self._definitions['PYOBJ'] = Definition(True, None, options=TOKEN_DEFAULT_PRIORITY)
+
+    def _ensure_pyobj_typed_terminal(self, type_name: str) -> str:
+        self._ensure_pyobj_terminal()
+        clean_name = type_name.strip()
+        if not clean_name:
+            raise GrammarError("PYOBJ[] requires a type name")
+        term_name = f'PYOBJ__{clean_name.upper()}'
+        if term_name not in self._template_term_defs:
+            self._template_term_defs[term_name] = TerminalDef(term_name, PatternPlaceholder(clean_name))
+        if term_name not in self._definitions:
+            self._definitions[term_name] = Definition(True, None, options=TOKEN_DEFAULT_PRIORITY)
+        return term_name
+
+    def _extract_pyobj_type(self, maybe_node: Tree) -> Optional[str]:
+        if not isinstance(maybe_node, Tree) or maybe_node.data != 'maybe' or not maybe_node.children:
+            return None
+        expansions ,= maybe_node.children
+        if not isinstance(expansions, Tree) or expansions.data != 'expansions' or len(expansions.children) != 1:
+            return None
+        expansion = expansions.children[0]
+        if not isinstance(expansion, Tree) or expansion.data != 'expansion' or len(expansion.children) != 1:
+            return None
+        value = expansion.children[0]
+        if not isinstance(value, Tree) or value.data != 'value' or len(value.children) != 1:
+            return None
+        symbol = value.children[0]
+        if isinstance(symbol, NonTerminal):
+            return symbol.name
+        if isinstance(symbol, Terminal):
+            return symbol.name
+        if isinstance(symbol, Token):
+            return str(symbol)
+        return None
+
+    def _process_template_placeholders(self) -> None:
+        if not self._definitions:
+            return
+
+        for definition in list(self._definitions.values()):
+            if not definition.is_term and isinstance(definition.tree, Tree):
+                self._process_pyobj_node(definition.tree)
+
+    def _process_pyobj_node(self, node: Tree) -> None:
+        if node.data == 'expansion':
+            self._process_pyobj_expansion(node)
+        for child in list(node.children):
+            if isinstance(child, Tree):
+                self._process_pyobj_node(child)
+
+    def _process_pyobj_expansion(self, node: Tree) -> None:
+        new_children = []
+        i = 0
+        children = node.children
+        while i < len(children):
+            child = children[i]
+            if isinstance(child, Tree) and child.data == 'value' and child.children:
+                symbol = child.children[0]
+                if isinstance(symbol, Terminal) and symbol.name == 'PYOBJ':
+                    if not self.uses_pyobj_placeholders:
+                        raise GrammarError("PYOBJ requires: %import template (PYOBJ)")
+                    self._ensure_pyobj_terminal()
+                    type_name = None
+                    if i + 1 < len(children):
+                        type_name = self._extract_pyobj_type(children[i + 1])
+                    if type_name is not None:
+                        term_name = self._ensure_pyobj_typed_terminal(type_name)
+                        child.children[0] = Terminal(term_name)
+                        new_children.append(child)
+                        i += 2
+                        continue
+            new_children.append(child)
+            i += 1
+        node.children = new_children
+
     def _unpack_import(self, stmt, grammar_name):
         if len(stmt.children) > 1:
             path_node, arg1 = stmt.children
@@ -1244,6 +1364,8 @@ class GrammarBuilder:
 
         for stmt in tree.children:
             if stmt.data == 'import':
+                if self._maybe_handle_template_import(stmt):
+                    continue
                 dotted_path, base_path, aliases = self._unpack_import(stmt, grammar_name)
                 try:
                     import_base_path, import_aliases = imports[dotted_path]
@@ -1373,6 +1495,7 @@ class GrammarBuilder:
             raise GrammarError("Terminals %s were marked to ignore but were not defined!" % (set(self._ignore_names) - set(self._definitions)))
 
     def build(self) -> Grammar:
+        self._process_template_placeholders()
         self.validate()
         rule_defs = []
         term_defs = []
@@ -1384,7 +1507,7 @@ class GrammarBuilder:
             else:
                 rule_defs.append((name, params, exp, options))
         # resolve_term_references(term_defs)
-        return Grammar(rule_defs, term_defs, self._ignore_names)
+        return Grammar(rule_defs, term_defs, self._ignore_names, dict(self._template_term_defs), self.uses_pyobj_placeholders)
 
 
 def verify_used_files(file_hashes):

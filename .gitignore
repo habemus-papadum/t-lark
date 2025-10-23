@@ -1,8 +1,8 @@
 *.pyc
 *.pyo
 /.tox
-/lark.egg-info/**
-/lark_parser.egg-info/**
+/t_lark.egg-info/**
+/t_lark_parser.egg-info/**
 tags
 .vscode
 .idea

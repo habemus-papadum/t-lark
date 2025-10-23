@@ -52,7 +52,7 @@ To help with these situations, Lark can utilize a new external library called `i
 
 ```
 import logging
-from lark import Lark, logger
+from t_lark import Lark, logger
 
 logger.setLevel(logging.WARN)
 
@@ -84,7 +84,7 @@ Either way, to get the messages printed you have to configure the `logger` befor
 
 ```python
 import logging
-from lark import Lark, logger
+from t_lark import Lark, logger
 
 logger.setLevel(logging.DEBUG)
 
@@ -119,7 +119,7 @@ When using strict-mode, users will be expected to resolve their collisions manua
 Strict-mode only applies to LALR for now.
 
 ```python
-from lark import Lark
+from t_lark import Lark
 
 collision_grammar = '''
 start: as as
@@ -130,7 +130,7 @@ p = Lark(collision_grammar, parser='lalr', strict=True)
 
 # Traceback (most recent call last):
 #   ...
-# lark.exceptions.GrammarError: Shift/Reduce conflict for terminal A. [strict-mode]
+# t_lark.exceptions.GrammarError: Shift/Reduce conflict for terminal A. [strict-mode]
 ```
 
 ## Tools
@@ -144,7 +144,7 @@ The resulting module provides the same interface as Lark, but with a fixed gramm
 Run using:
 
 ```bash
-python -m lark.tools.standalone
+python -m t_lark.tools.standalone
 ```
 
 For a play-by-play, read the [tutorial](http://blog.erezsh.com/create-a-stand-alone-lalr1-parser-in-python/)

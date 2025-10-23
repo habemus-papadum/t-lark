@@ -5,14 +5,14 @@ from logging import DEBUG, INFO, WARN, ERROR
 from typing import Optional
 import warnings
 
-from lark import Lark, logger
+from t_lark import Lark, logger
 try:
     from interegular import logger as interegular_logger
     has_interegular = True
 except ImportError:
     has_interegular = False
 
-lalr_argparser = ArgumentParser(add_help=False, epilog='Look at the Lark documentation for more info on the options')
+lalr_argparser = ArgumentParser(add_help=False, epilog='Look at the t_lark documentation for more info on the options')
 
 flags = [
     ('d', 'debug'),

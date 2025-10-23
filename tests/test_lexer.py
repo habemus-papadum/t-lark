@@ -1,6 +1,6 @@
 from unittest import TestCase, main
 
-from lark import Lark, Tree, TextSlice
+from t_lark import Lark, Tree, TextSlice
 
 
 class TestLexer(TestCase):

@@ -1,3 +1,5 @@
+from functools import lru_cache
+from importlib import import_module
 from typing import Any, Callable, Dict, Optional, Collection, Union, TYPE_CHECKING
 
 from .exceptions import ConfigurationError, GrammarError, UnexpectedInput, UnexpectedToken, assert_config
@@ -58,6 +60,17 @@ def _deserialize_parsing_frontend(data, memo, lexer_conf, callbacks, options):
 
 
 _parser_creators: 'Dict[str, Callable[[LexerConf, Any, Any], Any]]' = {}
+
+@lru_cache(maxsize=1)
+def _string_template_type() -> Optional[type[Any]]:
+    try:
+        module = import_module("string.templatelib")
+    except ModuleNotFoundError:
+        return None
+    template_cls = getattr(module, "Template")
+    if not isinstance(template_cls, type):
+        raise TypeError("string.templatelib.Template is expected to be a type")
+    return template_cls
 
 
 class ParsingFrontend(Serialize):
@@ -280,11 +293,11 @@ class TemplateEarleyFrontend:
         return start
 
     def parse(self, input_data, start=None, on_error=None):
-        from string.templatelib import Template
-
         chosen_start = self._verify_start(start)
 
-        if isinstance(input_data, Template):
+        template_cls = _string_template_type()
+
+        if template_cls is not None and isinstance(input_data, template_cls):
             lexer = self._tokenize_template(input_data)
         else:
             lexer = self._lex_string(input_data)
@@ -300,7 +313,7 @@ class TemplateEarleyFrontend:
 
         return tree
 
-    def _tokenize_template(self, template):
+    def _tokenize_template(self, template: Any):
         ctx = TemplateContext(
             lexer_conf=self.lexer_conf,
             tree_terminal_map=self.tree_terminal_map,
@@ -315,9 +328,9 @@ class TemplateEarleyFrontend:
         return _StringLexer(self.lexer_conf, text_slice)
 
     def _enhance_error(self, exc: UnexpectedInput, input_data) -> None:
-        from string.templatelib import Template
+        template_cls = _string_template_type()
 
-        if not isinstance(input_data, Template):
+        if template_cls is None or not isinstance(input_data, template_cls):
             return
 
         if not isinstance(exc, UnexpectedToken):

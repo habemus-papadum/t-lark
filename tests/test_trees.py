@@ -8,9 +8,9 @@ import copy
 import pickle
 import functools
 
-from lark.tree import Tree
-from lark.lexer import Token
-from lark.visitors import Visitor, Visitor_Recursive, Transformer, Interpreter, visit_children_decor, v_args, Discard, Transformer_InPlace, \
+from t_lark.tree import Tree
+from t_lark.lexer import Token
+from t_lark.visitors import Visitor, Visitor_Recursive, Transformer, Interpreter, visit_children_decor, v_args, Discard, Transformer_InPlace, \
     Transformer_InPlaceRecursive, Transformer_NonRecursive, merge_transformers
 
 

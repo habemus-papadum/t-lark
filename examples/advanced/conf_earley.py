@@ -14,7 +14,7 @@ but it can handle some ambiguity when lexing and it's much faster.
 See examples/conf_lalr.py for an example of that approach.
 
 """
-from lark import Lark
+from t_lark import Lark
 
 parser = Lark(r"""
         start: _NL? section+

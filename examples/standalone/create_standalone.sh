@@ -1,2 +1,2 @@
 #!/bin/sh
-PYTHONPATH=../.. python -m lark.tools.standalone json.lark > json_parser.py
+PYTHONPATH=../.. python -m t_lark.tools.standalone json.lark > json_parser.py

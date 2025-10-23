@@ -3,11 +3,11 @@ from __future__ import absolute_import
 import logging
 from unittest import TestCase, main, skipIf
 
-from lark import Lark, Tree, Transformer, UnexpectedInput
-from lark.exceptions import ConfigurationError
-from lark.lexer import Lexer, Token
-import lark.lark as lark_module
-from lark.reconstruct import Reconstructor
+from t_lark import Lark, Tree, Transformer, UnexpectedInput
+from t_lark.exceptions import ConfigurationError
+from t_lark.lexer import Lexer, Token
+import t_lark.lark as lark_module
+from t_lark.reconstruct import Reconstructor
 from . import test_reconstructor
 
 from io import BytesIO
@@ -159,13 +159,13 @@ class TestCache(TestCase):
         Lark(g, parser="lalr", regex=True, cache=True)
         assert len(self.mock_fs.files) == 1
 
-        with self.assertLogs("lark", level="ERROR") as cm:
+        with self.assertLogs("t_lark", level="ERROR") as cm:
             Lark(g, parser='lalr', regex=True, cache=True)
             assert len(self.mock_fs.files) == 1
             # need to add an error log, because 'self.assertNoLogs' was added in Python 3.10
-            logging.getLogger('lark').error("dummy message")
+            logging.getLogger('t_lark').error("dummy message")
         # should only have the dummy log
-        self.assertCountEqual(cm.output, ["ERROR:lark:dummy message"])
+        self.assertCountEqual(cm.output, ["ERROR:t_lark:dummy message"])
 
 
     def test_error_message(self):

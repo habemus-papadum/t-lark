@@ -14,8 +14,8 @@ import sys
 from typing import List
 from dataclasses import dataclass
 
-from lark import Lark, ast_utils, Transformer, v_args
-from lark.tree import Meta
+from t_lark import Lark, ast_utils, Transformer, v_args
+from t_lark.tree import Meta
 
 this_module = sys.modules[__name__]
 

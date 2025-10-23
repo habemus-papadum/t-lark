@@ -36,16 +36,16 @@ Example:
 
         IncreaseAllNumbers().visit(parse_tree)
 
-.. autoclass:: lark.visitors.Visitor
+.. autoclass:: t_lark.visitors.Visitor
     :members: visit, visit_topdown, __default__
 
-.. autoclass:: lark.visitors.Visitor_Recursive
+.. autoclass:: t_lark.visitors.Visitor_Recursive
     :members: visit, visit_topdown, __default__
 
 Interpreter
 -----------
 
-.. autoclass:: lark.visitors.Interpreter
+.. autoclass:: t_lark.visitors.Interpreter
 
 
 Example:
@@ -64,13 +64,13 @@ Example:
 Transformer
 -----------
 
-.. autoclass:: lark.visitors.Transformer
+.. autoclass:: t_lark.visitors.Transformer
     :members: transform, __default__, __default_token__, __mul__
 
 Example:
     ::
 
-        from lark import Tree, Transformer
+        from t_lark import Tree, Transformer
 
         class EvalExpressions(Transformer):
             def expr(self, args):
@@ -92,31 +92,31 @@ Example:
 
         T(visit_tokens=True).transform(tree)
 
-.. autoclass:: lark.visitors.Transformer_NonRecursive
+.. autoclass:: t_lark.visitors.Transformer_NonRecursive
 
-.. autoclass:: lark.visitors.Transformer_InPlace
+.. autoclass:: t_lark.visitors.Transformer_InPlace
 
-.. autoclass:: lark.visitors.Transformer_InPlaceRecursive
+.. autoclass:: t_lark.visitors.Transformer_InPlaceRecursive
 
 v_args
 ------
 
-.. autofunction:: lark.visitors.v_args
+.. autofunction:: t_lark.visitors.v_args
 
 merge_transformers
 ------------------
 
-.. autofunction:: lark.visitors.merge_transformers
+.. autofunction:: t_lark.visitors.merge_transformers
 
 Discard
 -------
 
 ``Discard`` is the singleton instance of ``_DiscardType``.
 
-.. autoclass:: lark.visitors._DiscardType
+.. autoclass:: t_lark.visitors._DiscardType
 
 
 VisitError
 ----------
 
-.. autoclass:: lark.exceptions.VisitError
+.. autoclass:: t_lark.exceptions.VisitError

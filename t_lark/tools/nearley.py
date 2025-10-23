@@ -6,7 +6,7 @@ import codecs
 import argparse
 
 
-from lark import Lark, Transformer, v_args
+from t_lark import Lark, Transformer, v_args
 
 nearley_grammar = r"""
     start: (ruledef|directive)+
@@ -156,7 +156,7 @@ def create_code_for_nearley_grammar(g, start, builtin_path, folder_path, es6=Fal
     lark_g = '\n'.join(rule_defs)
     lark_g += '\n'+'\n'.join('!%s: %s' % item for item in n2l.extra_rules.items())
 
-    emit('from lark import Lark, Transformer')
+    emit('from t_lark import Lark, Transformer')
     emit()
     emit('grammar = ' + repr(lark_g))
     emit()
@@ -186,7 +186,7 @@ def main(fn, start, nearley_lib, es6=False):
     return create_code_for_nearley_grammar(grammar, start, os.path.join(nearley_lib, 'builtin'), os.path.abspath(os.path.dirname(fn)), es6=es6)
 
 def get_arg_parser():
-    parser = argparse.ArgumentParser(description='Reads a Nearley grammar (with js functions), and outputs an equivalent lark parser.')
+    parser = argparse.ArgumentParser(description='Reads a Nearley grammar (with js functions), and outputs an equivalent t_lark parser.')
     parser.add_argument('nearley_grammar', help='Path to the file containing the nearley grammar')
     parser.add_argument('start_rule', help='Rule within the nearley grammar to make the base rule')
     parser.add_argument('nearley_lib', help='Path to root directory of nearley codebase (used for including builtins)')

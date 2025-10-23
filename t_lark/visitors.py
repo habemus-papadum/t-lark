@@ -38,7 +38,7 @@ class _DiscardType:
     """
 
     def __repr__(self):
-        return "lark.visitors.Discard"
+        return "t_lark.visitors.Discard"
 
 Discard = _DiscardType()
 
@@ -84,7 +84,7 @@ class Transformer(_Decoratable, ABC, Generic[_Leaf_T, _Return_T]):
     If the transformer cannot find a method with the right name, it will instead call ``__default__``, which by
     default creates a copy of the node.
 
-    To discard a node, return Discard (``lark.visitors.Discard``).
+    To discard a node, return Discard (``t_lark.visitors.Discard``).
 
     ``Transformer`` can do anything ``Visitor`` can do, but because it reconstructs the tree,
     it is slightly less efficient.

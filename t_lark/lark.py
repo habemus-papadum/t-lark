@@ -112,7 +112,7 @@ class LarkOptions(Serialize):
     keep_all_tokens
             Prevent the tree builder from automagically removing "punctuation" tokens (Default: ``False``)
     tree_class
-            Lark will produce trees comprised of instances of this class instead of the default ``lark.Tree``.
+            Lark will produce trees comprised of instances of this class instead of the default ``t_lark.Tree``.
 
     **=== Algorithm Options ===**
 
@@ -167,7 +167,7 @@ class LarkOptions(Serialize):
     # - In the docstring above. It is used both for the docstring of `LarkOptions` and `Lark`, and in readthedocs
     # - As an attribute of `LarkOptions` above
     # - Potentially in `_LOAD_ALLOWED_OPTIONS` below this class, when the option doesn't change how the grammar is loaded
-    # - Potentially in `lark.tools.__init__`, if it makes sense, and it can easily be passed as a cmd argument
+    # - Potentially in `t_lark.tools.__init__`, if it makes sense, and it can easily be passed as a cmd argument
     _defaults: Dict[str, Any] = {
         'debug': False,
         'strict': False,
@@ -356,7 +356,7 @@ class Lark(Serialize):
                         username = "unknown"
 
 
-                    cache_fn = tempfile.gettempdir() + "/.lark_%s_%s_%s_%s_%s.tmp" % (
+                    cache_fn = tempfile.gettempdir() + "/.t_lark_%s_%s_%s_%s_%s.tmp" % (
                         "cache_grammar" if self.options.cache_grammar else "cache", username, cache_sha256, *sys.version_info[:2])
 
                 old_options = self.options

@@ -100,7 +100,7 @@ class Tree(Generic[_Leaf_T]):
         Example:
             ::
                 from rich import print
-                from lark import Tree
+                from t_lark import Tree
 
                 tree = Tree('root', ['node1', 'node2'])
                 print(tree)

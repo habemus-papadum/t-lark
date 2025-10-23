@@ -11,8 +11,8 @@ It can be useful for creating "hooks" to alter data before handing it to other p
 
 import json
 
-from lark import Lark
-from lark.reconstruct import Reconstructor
+from t_lark import Lark
+from t_lark.reconstruct import Reconstructor
 
 from _json_parser import json_grammar
 

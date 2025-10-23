@@ -6,8 +6,8 @@ import logging
 import os
 import codecs
 
-from lark import logger
-from lark.tools.nearley import create_code_for_nearley_grammar, main as nearley_tool_main
+from t_lark import logger
+from t_lark.tools.nearley import create_code_for_nearley_grammar, main as nearley_tool_main
 
 logger.setLevel(logging.INFO)
 

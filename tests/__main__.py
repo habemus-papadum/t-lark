@@ -3,7 +3,7 @@ from __future__ import absolute_import, print_function
 import unittest
 import logging
 import sys
-from lark import logger
+from t_lark import logger
 
 from .test_trees import TestTrees
 from .test_tools import TestStandalone

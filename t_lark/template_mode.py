@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Dict, Iterable, Iterator, Mapping, Optional, Sequence, Set, Tuple
+from typing import Dict, Iterable, Iterator, Mapping, Optional, Sequence, Set, Tuple, cast
 
 from .common import LexerConf, ParserConf
 from .grammar import NonTerminal, Rule, RuleOptions, Terminal
@@ -119,7 +119,7 @@ def _segment_text_slice(static_str: str, index: int, ctx: TemplateContext) -> Te
 def _build_interpolation_token(value, ctx: TemplateContext, index: int) -> Token:
     info = ctx.source_info
     if info is None:
-        meta = {
+        meta: Dict[str, Optional[int]] = {
             "start_pos": None,
             "end_pos": None,
             "line": None,
@@ -129,7 +129,7 @@ def _build_interpolation_token(value, ctx: TemplateContext, index: int) -> Token
         }
     else:
         start, end = info.interpolation_spans[index]
-        meta = _offset_to_meta(info.text, start, end)
+        meta = cast(Dict[str, Optional[int]], _offset_to_meta(info.text, start, end))
 
     if isinstance(value, Tree):
         term_name = ctx.tree_terminal_map.get(value.data)

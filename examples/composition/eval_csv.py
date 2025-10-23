@@ -1,6 +1,6 @@
 "Transformer for evaluating csv.lark"
 
-from lark import Transformer
+from t_lark import Transformer
 
 class CsvTreeToPandasDict(Transformer):
     INT = int

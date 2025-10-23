@@ -20,9 +20,9 @@ file format that allows both CSV and JSON to co-exist.
 
 """
 from pathlib import Path
-from lark import Lark
+from t_lark import Lark
 from json import dumps
-from lark.visitors import Transformer, merge_transformers
+from t_lark.visitors import Transformer, merge_transformers
 
 from eval_csv import CsvTreeToPandasDict
 from eval_json import JsonTreeToJson

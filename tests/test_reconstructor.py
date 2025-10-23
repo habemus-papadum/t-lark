@@ -6,8 +6,8 @@ import unittest
 from itertools import product
 from unittest import TestCase
 
-from lark import Lark
-from lark.reconstruct import Reconstructor
+from t_lark import Lark
+from t_lark.reconstruct import Reconstructor
 
 common = """
 %import common (WS_INLINE, NUMBER, WORD)

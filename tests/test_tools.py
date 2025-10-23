@@ -2,9 +2,9 @@ from __future__ import absolute_import, print_function
 
 from unittest import TestCase, main
 
-from lark import Lark
-from lark.tree import Tree
-from lark.tools import standalone
+from t_lark import Lark
+from t_lark.tree import Tree
+from t_lark.tools import standalone
 
 from io import StringIO
 
@@ -122,7 +122,7 @@ class TestStandalone(TestCase):
         self.assertEqual(x, ['a', 'b'])
 
     def test_postlex(self):
-        from lark.indenter import Indenter
+        from t_lark.indenter import Indenter
         class MyIndenter(Indenter):
             NL_type = '_NEWLINE'
             OPEN_PAREN_types = ['LPAR', 'LSQB', 'LBRACE']

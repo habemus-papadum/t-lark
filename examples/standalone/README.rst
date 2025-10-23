@@ -11,7 +11,7 @@ Or:
 
 .. code-block:: bash
 
-   python -m lark.tools.standalone json.lark > json_parser.py
+   python -m t_lark.tools.standalone json.lark > json_parser.py
 
 Then run using:
 

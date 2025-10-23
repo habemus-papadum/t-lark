@@ -29,19 +29,19 @@ things to consider when deciding whether or not to use the SPPF.
 SymbolNode
 ----------
 
-.. autoclass:: lark.parsers.earley_forest.SymbolNode
+.. autoclass:: t_lark.parsers.earley_forest.SymbolNode
    :members: is_ambiguous, children
 
 PackedNode
 ----------
 
-.. autoclass:: lark.parsers.earley_forest.PackedNode
+.. autoclass:: t_lark.parsers.earley_forest.PackedNode
    :members: children
 
 ForestVisitor
 -------------
 
-.. autoclass:: lark.parsers.earley_forest.ForestVisitor
+.. autoclass:: t_lark.parsers.earley_forest.ForestVisitor
    :members: visit, visit_symbol_node_in, visit_symbol_node_out,
              visit_packed_node_in, visit_packed_node_out,
              visit_token_node, on_cycle, get_cycle_in_path
@@ -49,17 +49,17 @@ ForestVisitor
 ForestTransformer
 -----------------
 
-.. autoclass:: lark.parsers.earley_forest.ForestTransformer
+.. autoclass:: t_lark.parsers.earley_forest.ForestTransformer
    :members: transform, transform_symbol_node, transform_intermediate_node,
              transform_packed_node, transform_token_node
 
 TreeForestTransformer
 ---------------------
 
-.. autoclass:: lark.parsers.earley_forest.TreeForestTransformer
+.. autoclass:: t_lark.parsers.earley_forest.TreeForestTransformer
    :members: __default__, __default_token__, __default_ambig__
 
 handles_ambiguity
 -----------------
 
-.. autofunction:: lark.parsers.earley_forest.handles_ambiguity
+.. autofunction:: t_lark.parsers.earley_forest.handles_ambiguity

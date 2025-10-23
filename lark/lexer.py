@@ -113,10 +113,55 @@ class PatternRE(Pattern):
         return self._get_width()[1]
 
 
+class PatternPlaceholder(Pattern):
+    """Pattern that represents a Python object placeholder token."""
+
+    __serialize_fields__ = 'value', 'flags', 'expected_type'
+    type: ClassVar[str] = "placeholder"
+
+    def __init__(self, expected_type: Optional[str] = None) -> None:
+        super().__init__("<pyobj>", flags=())
+        self.expected_type = expected_type
+
+    def to_regexp(self) -> str:
+        # Never matches actual text
+        return r'(?!.*)'
+
+    @property
+    def min_width(self) -> int:
+        return 0
+
+    @property
+    def max_width(self) -> int:
+        return 0
+
+
+class PatternTree(Pattern):
+    """Pattern that represents an interpolated Lark Tree placeholder."""
+
+    __serialize_fields__ = 'value', 'flags', 'label'
+    type: ClassVar[str] = "tree"
+
+    def __init__(self, label: str) -> None:
+        super().__init__(f"<tree:{label}>", flags=())
+        self.label = label
+
+    def to_regexp(self) -> str:
+        return r'(?!.*)'
+
+    @property
+    def min_width(self) -> int:
+        return 0
+
+    @property
+    def max_width(self) -> int:
+        return 0
+
+
 class TerminalDef(Serialize):
     "A definition of a terminal"
     __serialize_fields__ = 'name', 'pattern', 'priority'
-    __serialize_namespace__ = PatternStr, PatternRE
+    __serialize_namespace__ = PatternStr, PatternRE, PatternPlaceholder, PatternTree
 
     name: str
     pattern: Pattern
@@ -332,7 +377,11 @@ def _get_match(re_, regexp, s, flags):
         return m.group(0)
 
 def _create_unless(terminals, g_regex_flags, re_, use_bytes):
-    tokens_by_type = classify(terminals, lambda t: type(t.pattern))
+    skipped_types = {'placeholder', 'tree'}
+    active_terminals = [t for t in terminals if getattr(t.pattern, 'type', None) not in skipped_types]
+    skipped_terminals = [t for t in terminals if getattr(t.pattern, 'type', None) in skipped_types]
+
+    tokens_by_type = classify(active_terminals, lambda t: type(t.pattern))
     assert len(tokens_by_type) <= 2, tokens_by_type.keys()
     embedded_strs = set()
     callback = {}
@@ -349,7 +398,8 @@ def _create_unless(terminals, g_regex_flags, re_, use_bytes):
         if unless:
             callback[retok.name] = UnlessCallback(Scanner(unless, g_regex_flags, re_, use_bytes=use_bytes))
 
-    new_terminals = [t for t in terminals if t not in embedded_strs]
+    new_terminals = [t for t in active_terminals if t not in embedded_strs]
+    new_terminals.extend(skipped_terminals)
     return new_terminals, callback
 
 
@@ -558,9 +608,10 @@ class BasicLexer(AbstractBasicLexer):
                 except self.re.error:
                     raise LexError("Cannot compile token %s: %s" % (t.name, t.pattern))
 
-                if t.pattern.min_width == 0:
+                if t.pattern.min_width == 0 and getattr(t.pattern, 'type', None) not in {"placeholder", "tree"}:
                     raise LexError("Lexer does not allow zero-width terminals. (%s: %s)" % (t.name, t.pattern))
-                if t.pattern.type == "re":
+
+                if getattr(t.pattern, 'type', None) == "re":
                     terminal_to_regexp[t] = regexp
 
             if not (set(conf.ignore) <= {t.name for t in terminals}):

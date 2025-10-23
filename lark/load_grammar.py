@@ -9,10 +9,10 @@ from copy import copy, deepcopy
 import pkgutil
 from ast import literal_eval
 from contextlib import suppress
-from typing import List, Tuple, Union, Callable, Dict, Optional, Sequence, Generator
+from typing import Any, List, Tuple, Union, Callable, Dict, Optional, Sequence, Generator, Set
 
 from .utils import bfs, logger, classify_bool, is_id_continue, is_id_start, bfs_all_unique, small_factors, OrderedSet, Serialize
-from .lexer import Token, TerminalDef, PatternStr, PatternRE, Pattern
+from .lexer import Token, TerminalDef, PatternStr, PatternRE, Pattern, PatternPlaceholder
 
 from .parse_tree_builder import ParseTreeBuilder
 from .parser_frontends import ParsingFrontend
@@ -686,8 +686,16 @@ class Grammar(Serialize):
         self.term_defs = term_defs
         self.rule_defs = rule_defs
         self.ignore = ignore
+        self.uses_pyobj_placeholders = False
+        self.pyobj_type_names = tuple()
 
-    __serialize_fields__ = 'term_defs', 'rule_defs', 'ignore'
+    def _deserialize(self):
+        if not hasattr(self, 'uses_pyobj_placeholders'):
+            self.uses_pyobj_placeholders = False
+        if not hasattr(self, 'pyobj_type_names'):
+            self.pyobj_type_names = tuple()
+
+    __serialize_fields__ = 'term_defs', 'rule_defs', 'ignore', 'uses_pyobj_placeholders', 'pyobj_type_names'
 
     def compile(self, start, terminals_to_keep) -> Tuple[List[TerminalDef], List[Rule], List[str]]:
         # We change the trees in-place (to support huge grammars)
@@ -711,6 +719,20 @@ class Grammar(Serialize):
         transformer = PrepareLiterals() * TerminalTreeToPattern()
         terminals = [TerminalDef(name, transformer.transform(term_tree), priority)
                      for name, (term_tree, priority) in term_defs if term_tree]
+
+        if getattr(self, 'uses_pyobj_placeholders', False):
+            placeholder_names = {'PYOBJ'}
+            placeholder_names.update(
+                f"PYOBJ__{type_name.upper()}" for type_name in getattr(self, 'pyobj_type_names', ())
+            )
+            existing_terminal_names = {t.name for t in terminals}
+
+            for name in sorted(placeholder_names):
+                if name in existing_terminal_names:
+                    continue
+
+                expected_type = None if name == 'PYOBJ' else name[len('PYOBJ__'):].lower()
+                terminals.append(TerminalDef(name, PatternPlaceholder(expected_type)))
 
         # =================
         #  Compile Rules
@@ -905,10 +927,93 @@ def symbol_from_strcase(s):
     assert isinstance(s, str)
     return Terminal(s, filter_out=s.startswith('_')) if s.isupper() else NonTerminal(s)
 
+
+def _extract_pyobj_type(maybe_node: Tree) -> Optional[str]:
+    if not isinstance(maybe_node, Tree) or maybe_node.data != 'maybe':
+        return None
+
+    if len(maybe_node.children) != 1:
+        return None
+
+    expansions ,= maybe_node.children
+    if expansions.data != 'expansions' or len(expansions.children) != 1:
+        return None
+
+    expansion ,= expansions.children
+    if expansion.data != 'expansion' or len(expansion.children) != 1:
+        return None
+
+    value_node ,= expansion.children
+    if not isinstance(value_node, Tree) or value_node.data != 'value' or len(value_node.children) != 1:
+        return None
+
+    symbol ,= value_node.children
+    if isinstance(symbol, NonTerminal):
+        return symbol.name
+
+    return None
+
+
+def _convert_pyobj_expansion(value_node: Tree, maybe_node: Tree) -> Optional[Terminal]:
+    if not (isinstance(value_node, Tree) and value_node.data == 'value' and len(value_node.children) == 1):
+        return None
+
+    terminal_node ,= value_node.children
+    if not isinstance(terminal_node, Terminal) or terminal_node.name != 'PYOBJ':
+        return None
+
+    type_name = _extract_pyobj_type(maybe_node)
+    if type_name is None:
+        return None
+
+    return Terminal(f'PYOBJ__{type_name.upper()}', filter_out=False)
+
 @inline_args
 class PrepareGrammar(Transformer_InPlace):
-    def terminal(self, name):
-        return Terminal(str(name), filter_out=name.startswith('_'))
+    def value(self, *items):
+        return Tree('value', list(items))
+
+    def expansion(self, *items):
+        elements = list(items)
+        rebuilt: List[Any] = []
+        i = 0
+        while i < len(elements):
+            current = elements[i]
+            if (
+                i + 1 < len(elements)
+                and isinstance(current, Tree)
+                and current.data == 'value'
+                and isinstance(elements[i + 1], Tree)
+                and elements[i + 1].data == 'maybe'
+            ):
+                typed_terminal = _convert_pyobj_expansion(current, elements[i + 1])
+                if typed_terminal is not None:
+                    rebuilt.append(Tree('value', [typed_terminal]))
+                    i += 2
+                    continue
+
+            rebuilt.append(current)
+            i += 1
+
+        return Tree('expansion', rebuilt)
+
+    def terminal(self, *items):
+        if len(items) == 1:
+            name_token ,= items
+            name = str(name_token)
+            return Terminal(name, filter_out=name.startswith('_'))
+
+        if len(items) == 2:
+            name_token, type_token = items
+            name = str(name_token)
+            if name != 'PYOBJ':
+                raise GrammarError("Type annotations are only supported for PYOBJ placeholders")
+
+            type_name = str(type_token)
+            term_name = f"PYOBJ__{type_name.upper()}"
+            return Terminal(term_name, filter_out=False)
+
+        raise GrammarError("Invalid terminal syntax")
 
     def nonterminal(self, name):
         return NonTerminal(name.value)
@@ -1099,6 +1204,8 @@ class GrammarBuilder:
 
         self._definitions: Dict[str, Definition] = {}
         self._ignore_names: List[str] = []
+        self.uses_pyobj_placeholders: bool = False
+        self._pyobj_type_names: Set[str] = set()
 
     def _grammar_error(self, is_term, msg, *names):
         args = {}
@@ -1245,6 +1352,21 @@ class GrammarBuilder:
         for stmt in tree.children:
             if stmt.data == 'import':
                 dotted_path, base_path, aliases = self._unpack_import(stmt, grammar_name)
+
+                module_parts = tuple(str(part) for part in dotted_path)
+                if module_parts == ('template',):
+                    imported_names = [str(name) for name in aliases.keys()]
+                    alias_targets = [str(value) for value in aliases.values()]
+
+                    if len(imported_names) != 1 or imported_names[0] != 'PYOBJ':
+                        raise GrammarError("%import template only supports: %import template (PYOBJ)")
+
+                    if alias_targets[0] != 'PYOBJ':
+                        raise GrammarError("PYOBJ from %import template cannot be aliased")
+
+                    self.uses_pyobj_placeholders = True
+                    continue
+
                 try:
                     import_base_path, import_aliases = imports[dotted_path]
                     assert base_path == import_base_path, 'Inconsistent base_path for %s.' % '.'.join(dotted_path)
@@ -1367,6 +1489,15 @@ class GrammarBuilder:
 
             for sym in _find_used_symbols(exp):
                 if sym not in self._definitions and sym not in params:
+                    if sym == 'PYOBJ' or sym.startswith('PYOBJ__'):
+                        if not self.uses_pyobj_placeholders:
+                            raise GrammarError("PYOBJ requires: %import template (PYOBJ)")
+
+                        if sym.startswith('PYOBJ__'):
+                            type_name = sym[len('PYOBJ__'):].lower()
+                            self._pyobj_type_names.add(type_name)
+                        continue
+
                     self._grammar_error(d.is_term, "{Type} '{name}' used but not defined (in {type2} {name2})", sym, name)
 
         if not set(self._definitions).issuperset(self._ignore_names):
@@ -1384,7 +1515,10 @@ class GrammarBuilder:
             else:
                 rule_defs.append((name, params, exp, options))
         # resolve_term_references(term_defs)
-        return Grammar(rule_defs, term_defs, self._ignore_names)
+        grammar = Grammar(rule_defs, term_defs, self._ignore_names)
+        grammar.uses_pyobj_placeholders = self.uses_pyobj_placeholders
+        grammar.pyobj_type_names = tuple(sorted(self._pyobj_type_names))
+        return grammar
 
 
 def verify_used_files(file_hashes):

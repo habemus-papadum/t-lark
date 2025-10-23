@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Tuple, ClassVar, Sequence
+from typing import Any, Dict, Optional, Tuple, ClassVar, Sequence, List, Set
 
 from .utils import Serialize
 
@@ -134,3 +134,45 @@ class Rule(Serialize):
 
 
 ###}
+
+
+def augment_grammar_for_template_mode(rules: List[Rule], terminals: List['TerminalDef']) -> Tuple[Dict[str, str], List[Rule]]:
+    """Augment rules and terminals to support template tree splicing."""
+
+    from .lexer import PatternTree, TerminalDef  # Lazy import to avoid cycles
+
+    labels_per_nonterminal: Dict[NonTerminal, Set[str]] = {}
+    for rule in rules:
+        label = rule.alias if rule.alias else rule.origin.name
+        labels_per_nonterminal.setdefault(rule.origin, set()).add(label)
+
+    existing_terminal_names = {terminal.name for terminal in terminals}
+    tree_terminals: Dict[str, Terminal] = {}
+
+    all_labels: Set[str] = set()
+    for label_set in labels_per_nonterminal.values():
+        all_labels.update(label_set)
+
+    for label in sorted(all_labels):
+        term_name = f"TREE__{label.upper()}"
+        if term_name not in existing_terminal_names:
+            terminals.append(TerminalDef(term_name, PatternTree(label)))
+            existing_terminal_names.add(term_name)
+        tree_terminals[label] = Terminal(term_name)
+
+    max_order: Dict[NonTerminal, int] = {}
+    for rule in rules:
+        max_order[rule.origin] = max(max_order.get(rule.origin, -1), rule.order)
+
+    new_rules: List[Rule] = []
+    for origin, labels in labels_per_nonterminal.items():
+        base_order = max_order.get(origin, -1) + 1
+        for offset, label in enumerate(sorted(labels)):
+            tree_terminal = tree_terminals[label]
+            new_rule = Rule(origin, [tree_terminal], order=base_order + offset, alias=None,
+                            options=RuleOptions(expand1=True))
+            new_rules.append(new_rule)
+
+    rules.extend(new_rules)
+
+    return {label: terminal.name for label, terminal in tree_terminals.items()}, new_rules

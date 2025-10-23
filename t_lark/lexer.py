@@ -615,7 +615,7 @@ class BasicLexer(AbstractBasicLexer):
             if has_interegular:
                 _check_regex_collisions(terminal_to_regexp, comparator, conf.strict)
             elif conf.strict:
-                raise LexError("interegular must be installed for strict mode. Use `pip install 'lark[interegular]'`.")
+                raise LexError("interegular must be installed for strict mode. Use `pip install 't-lark[interegular]'`.")
 
         # Init
         self.newline_types = frozenset(t.name for t in terminals if _regexp_has_newline(t.pattern.to_regexp()))

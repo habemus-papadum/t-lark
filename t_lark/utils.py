@@ -2,7 +2,7 @@ import unicodedata
 import os
 from itertools import product
 from collections import deque
-from typing import Callable, Iterator, List, Optional, Tuple, Type, TypeVar, Union, Dict, Any, Sequence, Iterable, AbstractSet
+from typing import Callable, Iterator, List, Optional, Tuple, Type, TypeVar, Union, Dict, Any, Sequence, Iterable, AbstractSet, TYPE_CHECKING, cast
 
 ###{standalone
 import sys, re
@@ -10,7 +10,7 @@ import logging
 from dataclasses import dataclass
 from typing import Generic, AnyStr
 
-logger: logging.Logger = logging.getLogger("lark")
+logger: logging.Logger = logging.getLogger("t_lark")
 logger.addHandler(logging.StreamHandler())
 # Set to highest level, since we have some warnings amongst the code
 # By default, we should not output any log messages
@@ -123,8 +123,12 @@ except ImportError:
     _has_regex = False
 
 if sys.version_info >= (3, 11):
-    import re._parser as sre_parse
-    import re._constants as sre_constants
+    if TYPE_CHECKING:
+        sre_parse = cast(Any, None)
+        sre_constants = cast(Any, None)
+    else:
+        import re._parser as sre_parse  # type: ignore[import-untyped]
+        import re._constants as sre_constants  # type: ignore[import-untyped]
 else:
     import sre_parse
     import sre_constants

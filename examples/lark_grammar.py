@@ -4,13 +4,13 @@ Lark Grammar
 
 A reference implementation of the Lark grammar (using LALR(1))
 """
-import lark
+import t_lark
 from pathlib import Path
 
 examples_path = Path(__file__).parent
-lark_path = Path(lark.__file__).parent
+t_lark_path = Path(t_lark.__file__).parent
 
-parser = lark.Lark.open(lark_path / 'grammars/lark.lark', rel_to=__file__, parser="lalr")
+parser = t_lark.Lark.open(t_lark_path / 'grammars/lark.lark', rel_to=__file__, parser="lalr")
 
 
 grammar_files = [
@@ -21,10 +21,10 @@ grammar_files = [
     examples_path / 'tests/no_newline_at_end.lark',
     examples_path / 'tests/negative_priority.lark',
     examples_path / 'standalone/json.lark',
-    lark_path / 'grammars/common.lark',
-    lark_path / 'grammars/lark.lark',
-    lark_path / 'grammars/unicode.lark',
-    lark_path / 'grammars/python.lark',
+    t_lark_path / 'grammars/common.lark',
+    t_lark_path / 'grammars/lark.lark',
+    t_lark_path / 'grammars/unicode.lark',
+    t_lark_path / 'grammars/python.lark',
 ]
 
 def test():

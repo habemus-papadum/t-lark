@@ -5,7 +5,7 @@ Templates
 This example shows how to use Lark's templates to achieve cleaner grammars
 
 """
-from lark import Lark
+from t_lark import Lark
 
 grammar = r"""
 start: list | dict

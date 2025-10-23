@@ -7,7 +7,7 @@ For an explanation, check out the JSON parser tutorial at /docs/json_tutorial.md
 
 (this is here for use by the other examples)
 """
-from lark import Lark, Transformer, v_args
+from t_lark import Lark, Transformer, v_args
 
 json_grammar = r"""
     ?start: value

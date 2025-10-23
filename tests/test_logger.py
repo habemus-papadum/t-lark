@@ -1,6 +1,6 @@
 import logging
 from contextlib import contextmanager
-from lark import Lark, logger
+from t_lark import Lark, logger
 from unittest import TestCase, main, skipIf
 
 from io import StringIO

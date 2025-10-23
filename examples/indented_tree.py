@@ -17,8 +17,8 @@ of a line will `confuse Lark`_.
 
 .. _`confuse Lark`: https://github.com/lark-parser/lark/issues/863
 """
-from lark import Lark
-from lark.indenter import Indenter
+from t_lark import Lark
+from t_lark.indenter import Indenter
 
 tree_grammar = r"""
     %import common.CNAME -> NAME

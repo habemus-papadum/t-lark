@@ -8,14 +8,14 @@ project, and run the following:
 
 .. code:: bash
 
-   [lark]$ python -m examples.<name_of_example>
+   [t_lark]$ python -m examples.<name_of_example>
 
 For example, the following will parse all the Python files in the
 standard library of your local installation:
 
 .. code:: bash
 
-   [lark]$ python -m examples.advanced.python_parser
+   [t_lark]$ python -m examples.advanced.python_parser
 
 Beginner Examples
 ~~~~~~~~~~~~~~~~~

@@ -8,12 +8,12 @@ a small formatter.
 
 """
 
-from lark import Token, Lark
-from lark.reconstruct import Reconstructor
-from lark.indenter import PythonIndenter
+from t_lark import Token, Lark
+from t_lark.reconstruct import Reconstructor
+from t_lark.indenter import PythonIndenter
 
 # Official Python grammar by Lark
-python_parser3 = Lark.open_from_package('lark', 'python.lark', ['grammars'],
+python_parser3 = Lark.open_from_package('t_lark', 'python.lark', ['grammars'],
                                         parser='lalr', postlex=PythonIndenter(), start='file_input',
                                         maybe_placeholders=False    # Necessary for reconstructor
                                         )

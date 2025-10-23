@@ -24,7 +24,7 @@ Traditional string-based parsing requires converting all data to strings first, 
 
 ```python
 from PIL import Image
-from lark import Lark
+from t_lark import Lark
 
 # Grammar for image composition DSL
 grammar = r"""
@@ -278,7 +278,7 @@ stmt: "print" "(" PYOBJ ")" ";"
 ```
 
 ```python
-from lark import Lark, Tree, Token
+from t_lark import Lark, Tree, Token
 from string.templatelib import Template
 
 parser = Lark(open('grammar.lark').read(), parser="earley", lexer="template")
@@ -375,7 +375,7 @@ image: PYOBJ[image]  -> image
 #### Setting Up the Parser
 
 ```python
-from lark import Lark
+from t_lark import Lark
 
 # Placeholder Image class for this example
 class Image:

@@ -770,8 +770,8 @@ class Lark:
 ```python
 import unittest
 from string.templatelib import Template
-from lark import Lark, Tree, Token
-from lark.exceptions import GrammarError, ConfigurationError, UnexpectedToken
+from t_lark import Lark, Tree, Token
+from t_lark.exceptions import GrammarError, ConfigurationError, UnexpectedToken
 
 
 class TestTemplateMode(unittest.TestCase):

@@ -7,7 +7,7 @@ import os
 import sys
 from copy import copy, deepcopy
 
-from lark import Token, Transformer_NonRecursive, LexError
+from t_lark import Token, Transformer_NonRecursive, LexError
 
 from io import (
         StringIO as uStringIO,
@@ -22,15 +22,15 @@ except ImportError:
     regex = None
 
 
-import lark
-from lark import logger
-from lark.lark import Lark
-from lark.utils import TextSlice
-from lark.exceptions import GrammarError, ParseError, UnexpectedToken, UnexpectedInput, UnexpectedCharacters
-from lark.tree import Tree
-from lark.visitors import Transformer, Transformer_InPlace, v_args, Transformer_InPlaceRecursive
-from lark.lexer import Lexer, BasicLexer
-from lark.indenter import Indenter
+import t_lark
+from t_lark import logger
+from t_lark.lark import Lark
+from t_lark.utils import TextSlice
+from t_lark.exceptions import GrammarError, ParseError, UnexpectedToken, UnexpectedInput, UnexpectedCharacters
+from t_lark.tree import Tree
+from t_lark.visitors import Transformer, Transformer_InPlace, v_args, Transformer_InPlaceRecursive
+from t_lark.lexer import Lexer, BasicLexer
+from t_lark.indenter import Indenter
 
 __all__ = ['TestParsers']
 
@@ -1119,7 +1119,7 @@ def _make_parser_test(LEXER, PARSER):
     if (LEXER, PARSER) == ('basic', 'earley'):
         # Check that the `lark.lark` grammar represents can parse every example used in these tests.
         # basic-Earley was an arbitrary choice, to make sure it only ran once.
-        lalr_parser = Lark.open(os.path.join(os.path.dirname(lark.__file__), 'grammars/lark.lark'), parser='lalr')
+        lalr_parser = Lark.open(os.path.join(os.path.dirname(t_lark.__file__), 'grammars/lark.lark'), parser='lalr')
         def wrap_with_test_grammar(f):
             def _f(x, **kwargs):
                 inst = f(x, **kwargs)
@@ -2622,7 +2622,7 @@ def _make_parser_test(LEXER, PARSER):
                 SYM: "a" | "b"
             """
 
-            class SYMTransformer(lark.visitors.Transformer):
+            class SYMTransformer(t_lark.visitors.Transformer):
                 def SYM(self, token):
                     return {"a": 1, "b": 2}[str(token)]
 

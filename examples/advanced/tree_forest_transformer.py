@@ -6,8 +6,8 @@ This example demonstrates how to subclass ``TreeForestTransformer`` to
 directly transform a SPPF.
 """
 
-from lark import Lark
-from lark.parsers.earley_forest import TreeForestTransformer, handles_ambiguity, Discard
+from t_lark import Lark
+from t_lark.parsers.earley_forest import TreeForestTransformer, handles_ambiguity, Discard
 
 class CustomTransformer(TreeForestTransformer):
 

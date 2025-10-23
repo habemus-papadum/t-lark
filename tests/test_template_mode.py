@@ -12,8 +12,8 @@ implementation intact. The coverage mirrors that suite's structure:
 
 import unittest
 
-from lark import Lark, Tree
-from lark.exceptions import ConfigurationError, UnexpectedToken
+from t_lark import Lark, Tree
+from t_lark.exceptions import ConfigurationError, UnexpectedToken
 
 
 class TestTemplateModeBasics(unittest.TestCase):

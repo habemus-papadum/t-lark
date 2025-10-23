@@ -3,10 +3,10 @@ from __future__ import absolute_import
 import os
 from unittest import TestCase, main
 
-from lark import Lark, Token, Tree, ParseError, UnexpectedInput
-from lark.load_grammar import GrammarError, GRAMMAR_ERRORS, find_grammar_errors, list_grammar_imports
-from lark.load_grammar import FromPackageLoader
-from lark.grammar import Symbol
+from t_lark import Lark, Token, Tree, ParseError, UnexpectedInput
+from t_lark.load_grammar import GrammarError, GRAMMAR_ERRORS, find_grammar_errors, list_grammar_imports
+from t_lark.load_grammar import FromPackageLoader
+from t_lark.grammar import Symbol
 
 class TestGrammar(TestCase):
     def setUp(self):
@@ -279,7 +279,7 @@ class TestGrammar(TestCase):
             self.assertEqual({os.path.split(i)[-1] for i in imports}, {'test_templates_import.lark', 'templates.lark'})
 
             imports = list_grammar_imports('%import common.WS', [])
-            assert len(imports) == 1 and imports[0].pkg_name == 'lark'
+            assert len(imports) == 1 and imports[0].pkg_name == 't_lark'
 
     def test_inline_with_expand_single(self):
         grammar = r"""

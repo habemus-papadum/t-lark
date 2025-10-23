@@ -19,7 +19,7 @@ from PyQt5.QtGui import QColor, QFont, QFontMetrics
 from PyQt5.Qsci import QsciScintilla
 from PyQt5.Qsci import QsciLexerCustom
 
-from lark import Lark
+from t_lark import Lark
 
 
 class LexerJson(QsciLexerCustom):

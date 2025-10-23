@@ -1,6 +1,6 @@
 from unittest import TestCase, main
 
-from lark import Token, Tree
+from t_lark import Token, Tree
 
 
 class TestPatternMatching(TestCase):

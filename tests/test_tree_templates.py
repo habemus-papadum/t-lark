@@ -3,9 +3,9 @@ from __future__ import absolute_import
 import unittest
 from copy import deepcopy
 
-from lark import Lark, Tree, Token
-from lark.exceptions import MissingVariableError
-from lark.tree_templates import TemplateConf, Template, TemplateTranslator
+from t_lark import Lark, Tree, Token
+from t_lark.exceptions import MissingVariableError
+from t_lark.tree_templates import TemplateConf, Template, TemplateTranslator
 
 SOME_NON_TEMPLATED_STRING = "foo bar"
 SOME_TEMPLATE_NAME = "thing"

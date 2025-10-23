@@ -98,7 +98,7 @@ Once we have our grammar, creating the parser is very simple.
 We simply instantiate Lark, and tell it to accept a "value":
 
 ```python
-from lark import Lark
+from t_lark import Lark
 json_parser = Lark(r"""
     value: dict
          | list
@@ -180,7 +180,7 @@ I'll present the solution, and then explain it:
 Here is the new grammar:
 
 ```python
-from lark import Lark
+from t_lark import Lark
 json_parser = Lark(r"""
     ?value: dict
           | list
@@ -233,7 +233,7 @@ A transformer is a class with methods corresponding to branch names. For each br
 So let's write a partial transformer, that handles lists and dictionaries:
 
 ```python
-from lark import Transformer
+from t_lark import Transformer
 
 class MyTransformer(Transformer):
     def list(self, items):
@@ -257,7 +257,7 @@ This is pretty close. Let's write a full transformer that can handle the termina
 Also, our definitions of list and dict are a bit verbose. We can do better:
 
 ```python
-from lark import Transformer
+from t_lark import Transformer
 
 class TreeToJson(Transformer):
     def string(self, s):
@@ -301,7 +301,7 @@ Our first program is going to be just a concatenation of everything we've done s
 
 ```python
 import sys
-from lark import Lark, Transformer
+from t_lark import Lark, Transformer
 
 json_grammar = r"""
     ?value: dict

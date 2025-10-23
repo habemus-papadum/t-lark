@@ -17,7 +17,7 @@ Another approach is to use the Earley algorithm.
 It will handle more cases than the contextual lexer, but at the cost of performance.
 See examples/conf_earley.py for an example of that approach.
 """
-from lark import Lark
+from t_lark import Lark
 
 parser = Lark(r"""
         start: _NL? section+

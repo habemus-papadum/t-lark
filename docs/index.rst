@@ -56,7 +56,7 @@ Install Lark
 
 .. code:: bash
 
-   $ pip install lark
+   $ pip install t-lark
 
 Syntax Highlighting
 -------------------

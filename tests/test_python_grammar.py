@@ -2,9 +2,9 @@ import inspect
 import textwrap
 from unittest import TestCase, main
 
-from lark import Lark
-from lark.indenter import PythonIndenter
-from lark.exceptions import UnexpectedCharacters, UnexpectedToken, ParseError
+from t_lark import Lark
+from t_lark.indenter import PythonIndenter
+from t_lark.exceptions import UnexpectedCharacters, UnexpectedToken, ParseError
 
 valid_DEC_NUMBER = [
     "0",
@@ -232,7 +232,7 @@ class TestPythonParser(TestCase):
     @classmethod
     def setUpClass(cls):
         cls.python_parser = Lark.open_from_package(
-            "lark", "python.lark", ("grammars",), parser='lalr',
+            "t_lark", "python.lark", ("grammars",), parser='lalr',
             postlex=PythonIndenter(), start=["number", "file_input"])
 
     def _test_parsed_is_this_terminal(self, text, terminal, start):
